@@ -116,6 +116,6 @@ pet-macos/               桌宠（Swift + AppKit）
 assets/crosspet/         197 张姿态图（193 上游 + 4 生成）+ 许可 + 署名
 tests/                   合成数据测试与检查驱动
 tools/                   检查与打包脚本
-docs/                    事件可用性探查
-设计说明.md               架构与边界
+docs/                    设计说明、迭代记录、事件探查、归档
+CHANGELOG.md             版本变更记录
 ```

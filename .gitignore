@@ -11,7 +11,7 @@ DerivedData/
 
 # 内部工作文档，不随 demo 发布
 AGENTS.md
-任务书.md
-并行精进计划.md
-下一阶段桥接可行性.md
+docs/迭代记录.md
+docs/事件可用性探查.md
+docs/归档/
 upstream/
