@@ -40,7 +40,24 @@ const ROUTES = new Map([
   ["/v3/hello", new Set(["GET"])],
   ["/v3/snapshot", new Set(["POST"])],
   ["/v3/selection", new Set(["GET", "POST"])],
+  ["/v3/state", new Set(["GET"])],
 ]);
+const POSE_STATE_KEYS = "characterId,fallback,pose,revision,schemaVersion,since";
+const POSE_NAME_PATTERN = /^[a-z0-9][a-z0-9_-]{0,47}$/;
+const BRIDGE_FAILURE_REASONS = new Set(["unreachable", "version_mismatch", "invalid_response"]);
+
+class PetBridgeError extends Error {
+  constructor(code, reason) {
+    super(code);
+    this.name = "PetBridgeError";
+    this.code = code;
+    this.reason = reason;
+  }
+}
+
+export function bridgeFailureReason(error) {
+  return BRIDGE_FAILURE_REASONS.has(error?.reason) ? error.reason : "invalid_response";
+}
 const CHARACTER_IDS = new Set(PET_CATALOG.map((item) => item.id));
 const STATUSES = new Set(["idle", "working", "tool", "success", "error"]);
 
@@ -162,6 +179,27 @@ function validateSelectionResponse(value) {
   };
 }
 
+function validatePoseStateResponse(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value) ||
+      Object.keys(value).sort().join(",") !== POSE_STATE_KEYS ||
+      value.schemaVersion !== PET_SCHEMA_VERSION ||
+      typeof value.characterId !== "string" || !CHARACTER_IDS.has(value.characterId) ||
+      typeof value.pose !== "string" || !POSE_NAME_PATTERN.test(value.pose) ||
+      typeof value.fallback !== "boolean" ||
+      !Number.isSafeInteger(value.since) || value.since < 0 ||
+      !Number.isSafeInteger(value.revision) || value.revision < 0) {
+    throw new PetBridgeError("PET_POSE_STATE_INVALID", "invalid_response");
+  }
+  return {
+    schemaVersion: value.schemaVersion,
+    characterId: value.characterId,
+    pose: value.pose,
+    fallback: value.fallback,
+    since: value.since,
+    revision: value.revision,
+  };
+}
+
 export class PetBridgeClient {
   constructor(fetchImpl, { baseUrl = PET_BASE_URL, timeoutMs = 900 } = {}) {
     if (typeof fetchImpl !== "function") throw new TypeError("A host network fetch function is required");
@@ -173,6 +211,11 @@ export class PetBridgeClient {
     this.fetchImpl = fetchImpl;
     this.baseUrl = base.origin;
     this.timeoutMs = timeoutMs;
+    this.lastPoseState = null;
+  }
+
+  resetPoseRevision() {
+    this.lastPoseState = null;
   }
 
   async request(path, method, body) {
@@ -183,35 +226,59 @@ export class PetBridgeClient {
       bodyText = JSON.stringify(body);
       if (new TextEncoder().encode(bodyText).byteLength > MAX_BODY_BYTES) throw new Error("PET_REQUEST_TOO_LARGE");
     }
-    const response = await this.fetchImpl(`${this.baseUrl}${path}`, {
-      method,
-      headers: bodyText === undefined ? { accept: "application/json" } : {
-        accept: "application/json",
-        "content-type": "application/json",
-      },
-      ...(bodyText === undefined ? {} : { body: bodyText }),
-      redirect: "error",
-      timeoutMs: this.timeoutMs,
-      maxResponseBytes: RESPONSE_LIMIT_BYTES,
-    });
-    if (response?.redirected === true) throw new Error("PET_REDIRECT_REFUSED");
+    let response;
+    try {
+      response = await this.fetchImpl(`${this.baseUrl}${path}`, {
+        method,
+        headers: bodyText === undefined ? { accept: "application/json" } : {
+          accept: "application/json",
+          "content-type": "application/json",
+        },
+        ...(bodyText === undefined ? {} : { body: bodyText }),
+        redirect: "error",
+        timeoutMs: this.timeoutMs,
+        maxResponseBytes: RESPONSE_LIMIT_BYTES,
+      });
+    } catch {
+      throw new PetBridgeError("PET_UNREACHABLE", "unreachable");
+    }
+    if (response?.redirected === true) throw new PetBridgeError("PET_REDIRECT_REFUSED", "invalid_response");
     if (typeof response?.url === "string" && response.url) {
-      const finalUrl = new URL(response.url);
-      if (finalUrl.origin !== this.baseUrl || finalUrl.pathname !== path) throw new Error("PET_ORIGIN_CHANGED");
+      try {
+        const finalUrl = new URL(response.url);
+        if (finalUrl.origin !== this.baseUrl || finalUrl.pathname !== path) {
+          throw new PetBridgeError("PET_ORIGIN_CHANGED", "invalid_response");
+        }
+      } catch (error) {
+        if (error instanceof PetBridgeError) throw error;
+        throw new PetBridgeError("PET_RESPONSE_INVALID", "invalid_response");
+      }
+    }
+    if (!Number.isSafeInteger(response?.status) || typeof response?.json !== "function") {
+      throw new PetBridgeError("PET_RESPONSE_INVALID", "invalid_response");
     }
     let data;
     try {
       data = await response.json();
     } catch {
-      throw new Error("PET_RESPONSE_INVALID");
+      throw new PetBridgeError("PET_RESPONSE_INVALID", "invalid_response");
     }
-    return { status: response.status, ok: response.ok, data };
+    return { status: response.status, ok: response.ok === true, data };
   }
 
   async probe() {
     const result = await this.request("/v3/hello", "GET");
-    if (!result.ok || result.data?.service !== "hana-desktop-pet" || result.data?.protocolVersion !== PET_PROTOCOL_VERSION) {
-      throw new Error("PET_SERVICE_MISMATCH");
+    if (result.status === 404) throw new PetBridgeError("PET_SERVICE_MISMATCH", "version_mismatch");
+    if (!result.ok || !result.data || typeof result.data !== "object" || Array.isArray(result.data)) {
+      throw new PetBridgeError("PET_SERVICE_MISMATCH", "invalid_response");
+    }
+    if (result.data.service === "hana-desktop-pet" &&
+        Number.isSafeInteger(result.data.protocolVersion) &&
+        result.data.protocolVersion !== PET_PROTOCOL_VERSION) {
+      throw new PetBridgeError("PET_SERVICE_MISMATCH", "version_mismatch");
+    }
+    if (result.data.service !== "hana-desktop-pet" || result.data.protocolVersion !== PET_PROTOCOL_VERSION) {
+      throw new PetBridgeError("PET_SERVICE_MISMATCH", "invalid_response");
     }
     return true;
   }
@@ -228,6 +295,22 @@ export class PetBridgeClient {
     const result = await this.request("/v3/selection", "GET");
     if (!result.ok) throw new Error("PET_SELECTION_UNAVAILABLE");
     return validateSelectionResponse(result.data);
+  }
+
+  async getPoseState() {
+    const result = await this.request("/v3/state", "GET");
+    if (result.status === 404) throw new PetBridgeError("PET_POSE_STATE_UNAVAILABLE", "version_mismatch");
+    if (!result.ok) throw new PetBridgeError("PET_POSE_STATE_UNAVAILABLE", "invalid_response");
+    const state = validatePoseStateResponse(result.data);
+    if (this.lastPoseState) {
+      if (state.revision < this.lastPoseState.revision ||
+          (state.revision === this.lastPoseState.revision &&
+           JSON.stringify(state) !== JSON.stringify(this.lastPoseState))) {
+        throw new PetBridgeError("PET_POSE_REVISION_INVALID", "invalid_response");
+      }
+    }
+    this.lastPoseState = state;
+    return state;
   }
 
   async setSelection(selection, expectedRevision) {

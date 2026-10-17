@@ -6,6 +6,7 @@ import PetCore
 struct PetCoreChecks {
     static func main() async throws {
         try testHealthAndRoutes()
+        try testPoseStateReadback()
         try testSyntheticSnapshotProjection()
         try testStrictUnknownFieldRejection()
         try testHintDTOValidation()
@@ -20,7 +21,7 @@ struct PetCoreChecks {
         try testCharacterMotionGeometry()
         try testHTTPParserLimits()
         try await testLoopbackServerRoundTrip()
-        print("All 15 PetCore checks passed.")
+        print("All 16 PetCore checks passed.")
     }
 
     private static func testHealthAndRoutes() throws {
@@ -35,6 +36,77 @@ struct PetCoreChecks {
         expect(api.handle(request("GET", "/v3/admin")).statusCode == 404, "unknown route is rejected")
         expect(api.handle(request("DELETE", "/v3/selection")).statusCode == 405, "unknown method is rejected")
         print("PASS health and route allowlist")
+    }
+
+    private static func testPoseStateReadback() throws {
+        let stateStore = PetStateStore()
+        let poseStore = PetPoseReadbackStore(characterId: "claude", pose: "idle", since: 100)
+        let api = PetAPI(store: stateStore, poseReadback: poseStore)
+
+        func readState() throws -> [String: Any] {
+            try json(api.handle(request("GET", "/v3/state")).body)
+        }
+
+        let initial = try readState()
+        expect(initial["schemaVersion"] as? Int == 3, "pose readback uses schema v3")
+        expect(initial["characterId"] as? String == "claude" && initial["pose"] as? String == "idle", "pose endpoint exposes the renderer's initial state")
+        expect(Set(initial.keys) == Set(["schemaVersion", "characterId", "pose", "fallback", "since", "revision"]), "pose response contains only the strict DTO fields")
+        expect(api.handle(PetHTTPRequest(method: "GET", path: "/v3/state", headers: [:], body: Data("{}".utf8))).statusCode == 400, "state read rejects a request body")
+        expect(api.handle(request("POST", "/v3/state")).statusCode == 405, "state endpoint is read-only")
+
+        let drawingPreferred = PetPosePlanner.preferredPose(for: .tool, toolName: "image_gen")
+        let drawingResolved = PetPosePlanner.resolvedPose(preferred: drawingPreferred, availablePoseNames: ["idle", "thinking"])
+        poseStore.update(characterId: "claude", pose: drawingResolved, fallback: drawingResolved != drawingPreferred, now: 200)
+        var state = try readState()
+        expect(state["pose"] as? String == "thinking", "readback reports the resolved pose rather than the planner's unavailable drawing request")
+        expect(state["fallback"] as? Bool == true, "fallback flag identifies the substituted artwork")
+        expect(state["since"] as? Int == 200 && state["revision"] as? Int == 1, "pose transition stamps since and increments revision")
+
+        poseStore.update(characterId: "claude", pose: drawingResolved, fallback: true, now: 250)
+        state = try readState()
+        expect(state["since"] as? Int == 200 && state["revision"] as? Int == 1, "unchanged resolved pose does not restart its clock or revision")
+
+        let hintPoses = ["idle", "thinking", "oops"]
+        for (index, hint) in PetActivityHint.allCases.enumerated() {
+            let preferred = PetPosePlanner.preferredPose(for: .working, toolName: nil, hint: hint)
+            let resolved = PetPosePlanner.resolvedPose(preferred: preferred, availablePoseNames: hintPoses)
+            poseStore.update(characterId: "gpt", pose: resolved, fallback: resolved != preferred, now: Int64(300 + index))
+            state = try readState()
+            expect(state["characterId"] as? String == "gpt" && state["pose"] as? String == resolved, "\(hint.rawValue) hint reports its final resolved pose")
+            expect(state["fallback"] as? Bool == (resolved != preferred), "\(hint.rawValue) fallback is reported accurately")
+        }
+
+        let moodPoseNames = ["idle", "thinking", "sleeping", "tired", "swamped_left", "proud"]
+        var fatigue = PetPoseMoodTracker()
+        _ = fatigue.update(status: .working, toolName: nil, lastActivityAt: 1, at: 0)
+        let tiredMood = fatigue.advance(at: PetPoseMoodTracker.tiredAfterWork + 0.01)
+        expect(tiredMood == .tired, "synthetic continuous work reaches the fatigue mood")
+        for mood in [PetPoseMood.sleeping, .tired, .swampedLeft, .swampedRight, .proud] {
+            let resolved = PetPoseMood.resolvedPose(for: mood, workPose: "thinking", availablePoseNames: moodPoseNames)
+            let primary: String
+            switch mood {
+            case .sleeping: primary = "sleeping"
+            case .tired: primary = "tired"
+            case .swampedLeft: primary = "swamped_left"
+            case .swampedRight: primary = "swamped_right"
+            case .proud: primary = "proud"
+            }
+            poseStore.update(characterId: "gpt", pose: resolved, fallback: resolved != primary, now: Int64(400 + moodPoseNames.firstIndex(of: resolved)!))
+            state = try readState()
+            expect(state["pose"] as? String == resolved, "\(mood.rawValue) mood period reports its final resolved pose")
+            expect(state["fallback"] as? Bool == (resolved != primary), "\(mood.rawValue) mood fallback reflects the mood artwork choice")
+        }
+
+        let errorPreferred = PetPosePlanner.preferredPose(for: .error, toolName: nil, hint: .confirming)
+        let errorResolved = PetPosePlanner.resolvedPose(preferred: errorPreferred, availablePoseNames: ["oops", "idle"])
+        poseStore.update(characterId: "gpt", pose: errorResolved, fallback: errorResolved != errorPreferred, now: 500)
+        state = try readState()
+        expect(state["pose"] as? String == "oops" && state["fallback"] as? Bool == false, "short error feedback outranks hints and reads back oops")
+        let revision = state["revision"] as? Int ?? -1
+        poseStore.update(characterId: "gpt", pose: "surprised", fallback: false, now: 501)
+        state = try readState()
+        expect((state["revision"] as? Int ?? -1) > revision && (state["since"] as? Int ?? 0) >= 501, "state revision increases and pose since advances across transitions")
+        print("PASS strict v3 final-pose readback, fallback, mood/hint resolution and revision")
     }
 
     private static func testSyntheticSnapshotProjection() throws {
@@ -457,6 +529,13 @@ struct PetCoreChecks {
         let healthBody = try json(healthData)
         expect(healthStatus == 200, "loopback listener returns HTTP 200")
         expect(healthBody["service"] as? String == "hana-desktop-pet", "loopback listener identifies its service")
+
+        let poseStore = PetPoseReadbackStore.shared
+        _ = poseStore.update(characterId: "gpt", pose: "thinking", fallback: true, now: PetStateStore.nowMilliseconds())
+        let (poseData, poseStatus) = try await send(session, url: baseURL.appendingPathComponent("v3/state"), method: "GET")
+        let poseResponse = try json(poseData)
+        expect(poseStatus == 200 && poseResponse["schemaVersion"] as? Int == 3, "loopback exposes the read-only pose route")
+        expect(poseResponse["characterId"] as? String == "gpt" && poseResponse["pose"] as? String == "thinking" && poseResponse["fallback"] as? Bool == true, "loopback state returns the stored final pose and fallback flag")
 
         let snapshot: [String: Any] = [
             "schemaVersion": 3,

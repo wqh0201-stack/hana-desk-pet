@@ -50,10 +50,10 @@ async function mount(options = {}) {
 }
 
 /** Step the clock between events so receive ordering stays unambiguous. */
-async function emit(harness, event, sessionPath) {
+async function emit(harness, event, sessionPath, delayMs = 1) {
   const subscription = harness.state.subscriptions[0];
   assert.ok(subscription, "the App subscribed to the public bus");
-  await harness.tick(1);
+  await harness.tick(delayMs);
   await subscription.callback(event, sessionPath);
   await settle();
 }
@@ -205,9 +205,9 @@ test("a denied session:get does not stop activity tracking", async () => {
 
 test("pinning a session keeps it current even when another session is newer", async () => {
   const harness = await mount();
-  await emit(harness, { type: "agent_start", sessionId: "session-alpha-0001" }, "/private/session/alpha");
-  await emit(harness, { type: "agent_start", sessionId: "session-beta-0002" }, "/private/session/beta");
-  assert.equal(harness.read(SNAPSHOT_KEY).current.sessionId, "session-beta-0002", "newest wins by default");
+  await emit(harness, { type: "tool_execution_end", sessionId: "session-alpha-0001", isError: false }, "/private/session/alpha");
+  await emit(harness, { type: "agent_start", sessionId: "session-beta-0002" }, "/private/session/beta", 3001);
+  assert.equal(harness.read(SNAPSHOT_KEY).current.sessionId, "session-beta-0002", "newer idle challenger clears the activity margin");
 
   await request(harness, "session-alpha-0001");
 
@@ -238,7 +238,8 @@ test("unpinning returns to following the most recent activity", async () => {
   await request(harness, "session-alpha-0001");
   assert.equal(harness.read(FOLLOW_KEY).mode, "pinned");
 
-  await emit(harness, { type: "agent_start", sessionId: "session-beta-0002" }, "/private/session/beta");
+  await emit(harness, { type: "agent_end", sessionId: "session-alpha-0001" }, "/private/session/alpha");
+  await emit(harness, { type: "agent_start", sessionId: "session-beta-0002" }, "/private/session/beta", 3001);
   assert.equal(harness.read(SNAPSHOT_KEY).current.sessionId, "session-alpha-0001", "the pin holds");
 
   await request(harness, null, "req-unpin");
@@ -249,10 +250,28 @@ test("unpinning returns to following the most recent activity", async () => {
   assert.equal(harness.read(SNAPSHOT_KEY).current.sessionId, "session-beta-0002", "back to the newest activity");
 });
 
+test("manual unpin bypasses hysteresis and immediately follows a challenger 1 second ahead", async () => {
+  const harness = await mount();
+  await emit(harness, { type: "tool_execution_end", sessionId: "session-alpha-0001", isError: false }, "/private/session/alpha");
+  await request(harness, "session-alpha-0001");
+  await emit(harness, { type: "agent_start", sessionId: "session-beta-0002" }, "/private/session/beta", 1001);
+
+  const pinned = harness.read(SNAPSHOT_KEY);
+  assert.equal(pinned.current.sessionId, "session-alpha-0001", "pin remains authoritative before unpin");
+  const alphaAt = pinned.sessions.find((item) => item.sessionId === "session-alpha-0001").lastActivityAt;
+  const betaAt = pinned.sessions.find((item) => item.sessionId === "session-beta-0002").lastActivityAt;
+  assert.equal(betaAt - alphaAt, 1001, "the challenger is below the ordinary 2-second margin");
+
+  await request(harness, null, "req-unpin-one-second");
+  assert.equal(harness.read(FOLLOW_KEY).mode, "latest");
+  assert.equal(harness.read(SNAPSHOT_KEY).current.sessionId, "session-beta-0002",
+    "the explicit unpin follows latest immediately");
+});
+
 test("a closed pinned session releases the pin and the pet keeps moving", async () => {
   const harness = await mount();
   await emit(harness, { type: "agent_start", sessionId: "session-alpha-0001" }, "/private/session/alpha");
-  await emit(harness, { type: "agent_start", sessionId: "session-beta-0002" }, "/private/session/beta");
+  await emit(harness, { type: "agent_start", sessionId: "session-beta-0002" }, "/private/session/beta", 1001);
   await request(harness, "session-alpha-0001");
   assert.equal(harness.read(SNAPSHOT_KEY).current.sessionId, "session-alpha-0001");
 
@@ -271,10 +290,11 @@ test("a closed pinned session releases the pin and the pet keeps moving", async 
   assert.equal(follow.reason, "latest");
 });
 
-test("an archived pinned session is released on the next refresh with a reason", async () => {
+test("an archived pinned session releases immediately to a challenger inside the margin", async () => {
   const harness = await mount();
   await emit(harness, { type: "agent_start", sessionId: "session-alpha-0001" }, "/private/session/alpha");
-  await emit(harness, { type: "agent_start", sessionId: "session-beta-0002" }, "/private/session/beta");
+  await emit(harness, { type: "agent_end", sessionId: "session-alpha-0001" }, "/private/session/alpha");
+  await emit(harness, { type: "agent_start", sessionId: "session-beta-0002" }, "/private/session/beta", 1001);
   await request(harness, "session-alpha-0001");
   assert.equal(harness.read(SNAPSHOT_KEY).current.sessionId, "session-alpha-0001");
 
@@ -296,7 +316,8 @@ test("an archived pinned session is released on the next refresh with a reason",
 test("a pin absent from the list is held through a grace window, then released", async () => {
   const harness = await mount();
   await emit(harness, { type: "agent_start", sessionId: "session-alpha-0001" }, "/private/session/alpha");
-  await emit(harness, { type: "agent_start", sessionId: "session-beta-0002" }, "/private/session/beta");
+  await emit(harness, { type: "agent_end", sessionId: "session-alpha-0001" }, "/private/session/alpha");
+  await emit(harness, { type: "agent_start", sessionId: "session-beta-0002" }, "/private/session/beta", 3001);
   await request(harness, "session-ghost-9999");
 
   const follow = harness.read(FOLLOW_KEY);

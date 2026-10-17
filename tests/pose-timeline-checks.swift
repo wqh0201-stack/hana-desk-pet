@@ -2,6 +2,8 @@ import Foundation
 
 @main
 struct PetPoseTimelineChecks {
+    private static var checkCount = 0
+
     static func main() {
         testStableWorkAndInterruptibleCrossfade()
         testReactionRestoresLatestActivity()
@@ -9,10 +11,11 @@ struct PetPoseTimelineChecks {
         testReducedMotionScheduling()
         testMoodThresholdsAndBoundaries()
         testHintsSuppressSleepAndYieldToWorkMood()
+        testFatiguePriorityAndWakeups()
         testHintPriorityInterruptAndStandby()
         testSleepingDoesNotRestartIdleAnimation()
         testFixedHeightLayoutAndTransform()
-        print("All pose timeline checks passed.")
+        print("PoseTimelineChecks: \(checkCount) checks passed.")
     }
 
     private static func testStableWorkAndInterruptibleCrossfade() {
@@ -111,16 +114,25 @@ struct PetPoseTimelineChecks {
         expect(sleep.update(status: .idle, toolName: nil, lastActivityAt: 11, at: 301) == nil, "a new idle activity timestamp immediately wakes and restarts the dwell")
         expect(sleep.update(status: .working, toolName: nil, lastActivityAt: 12, at: 302) == nil, "a working status immediately wakes sleep")
 
+        var longIdle = PetPoseMoodTracker()
+        _ = longIdle.update(status: .idle, toolName: nil, lastActivityAt: 13, at: 0)
+        expect(longIdle.advance(at: 10 * 60) == .sleeping, "ten minutes of pure idle stays sleeping rather than becoming tired")
+
         var tired = PetPoseMoodTracker()
         _ = tired.update(status: .working, toolName: nil, lastActivityAt: 20, at: 0)
-        _ = tired.update(status: .tool, toolName: "read_file", lastActivityAt: 21, at: 2_399)
-        expect(tired.advance(at: PetPoseMoodTracker.tiredAfterWork - 0.001) == nil, "tired threshold does not fire early across working/tool")
-        expect(tired.advance(at: PetPoseMoodTracker.tiredAfterWork) == nil, "tired waits until work is strictly longer than forty minutes")
-        expect(tired.advance(at: PetPoseMoodTracker.tiredAfterWork + 0.001) == .tired, "tired starts just beyond the forty-minute threshold")
+        let justBeforeTenMinutes = PetPoseMoodTracker.tiredAfterWork - 1
+        _ = tired.update(status: .tool, toolName: "read_file", lastActivityAt: 21, at: justBeforeTenMinutes)
+        expect(tired.nextDeadline(after: justBeforeTenMinutes) == PetPoseMoodTracker.tiredAfterWork + 0.001, "tired schedules exactly one wake just beyond ten minutes from continuous work start")
+        expect(tired.advance(at: 9 * 60 + 59) == nil, "tired remains off at the exact nine-minute-fifty-nine-second boundary")
+        expect(tired.advance(at: PetPoseMoodTracker.tiredAfterWork - 0.001) == nil, "tired threshold does not fire at ten minutes minus one millisecond")
+        expect(tired.advance(at: PetPoseMoodTracker.tiredAfterWork) == nil, "tired waits until work is strictly longer than ten minutes")
+        expect(tired.advance(at: PetPoseMoodTracker.tiredAfterWork + 0.001) == .tired, "tired starts just beyond the ten-minute threshold")
         expect(tired.nextDeadline(after: PetPoseMoodTracker.tiredAfterWork + 0.001) == nil, "settled tired state has no repeating wakeup")
-        expect(tired.update(status: .idle, toolName: nil, lastActivityAt: 22, at: 2_401) == nil, "idle clears continuous-work fatigue")
-        _ = tired.update(status: .working, toolName: nil, lastActivityAt: 23, at: 2_402)
-        expect(tired.advance(at: 2_402 + PetPoseMoodTracker.tiredAfterWork - 0.001) == nil, "work after idle starts a fresh fatigue interval")
+        expect(tired.update(status: .idle, toolName: nil, lastActivityAt: 22, at: 601) == nil, "idle clears continuous-work fatigue")
+        _ = tired.update(status: .working, toolName: nil, lastActivityAt: 23, at: 602)
+        expect(tired.advance(at: 602 + 9 * 60 + 59) == nil, "work after idle starts a fresh fatigue interval")
+        expect(tired.advance(at: 602 + PetPoseMoodTracker.tiredAfterWork) == nil, "the restarted ten-minute boundary remains strict")
+        expect(tired.advance(at: 602 + PetPoseMoodTracker.tiredAfterWork + 0.001) == .tired, "only the restarted continuous work interval triggers tired")
 
         var shortSuccess = PetPoseMoodTracker()
         _ = shortSuccess.update(status: .working, toolName: nil, lastActivityAt: 30, at: 0)
@@ -132,6 +144,7 @@ struct PetPoseTimelineChecks {
         expect(proud.update(status: .success, toolName: nil, lastActivityAt: 41, at: PetPoseMoodTracker.proudAfterWork) == .proud, "success after sixty seconds prefers proud")
         expect(proud.advance(at: 61) == .proud, "proud remains visible during the short success feedback")
         expect(proud.update(status: .working, toolName: nil, lastActivityAt: 42, at: 61.5) == nil, "continued work within short feedback preserves the round without stale proud art")
+        expect(proud.nextDeadline(after: 61.5) == PetPoseMoodTracker.tiredAfterWork + 0.001, "the 2.5-second success continuation retains the original fatigue deadline")
         expect(proud.advance(at: PetPoseMoodTracker.tiredAfterWork + 0.001) == .tired, "short tool-result feedback does not erase continuous work")
 
         var busy = PetPoseMoodTracker()
@@ -175,10 +188,55 @@ struct PetPoseTimelineChecks {
         expect(idle.advance(at: 1_206) == nil, "clearing a hint restarts the idle dwell")
         expect(idle.advance(at: 1_206.001) == .sleeping, "ordinary idle sleep resumes after the post-hint dwell")
 
-        var work = PetPoseMoodTracker()
-        _ = work.update(status: .working, toolName: nil, hint: .compacting, lastActivityAt: 5, at: 0)
-        expect(work.advance(at: PetPoseMoodTracker.tiredAfterWork + 1) == nil, "active hint suppresses fatigue art while it is displayed")
-        expect(work.update(status: .working, toolName: nil, hint: nil, lastActivityAt: 6, at: PetPoseMoodTracker.tiredAfterWork + 1) == .tired, "clearing the hint restores the existing work mood")
+        for (index, hint) in PetActivityHint.allCases.enumerated() {
+            var work = PetPoseMoodTracker()
+            _ = work.update(status: .working, toolName: nil, hint: hint, lastActivityAt: Int64(5 + index), at: 0)
+            expect(work.advance(at: PetPoseMoodTracker.tiredAfterWork + 1) == nil, "\(hint.rawValue) suppresses fatigue after the threshold")
+            expect(work.update(status: .working, toolName: nil, hint: nil, lastActivityAt: Int64(10 + index), at: PetPoseMoodTracker.tiredAfterWork + 1) == .tired, "clearing \(hint.rawValue) restores the accumulated work fatigue")
+
+            var busy = PetPoseMoodTracker()
+            for event in 0..<PetPoseMoodTracker.busyToolStartThreshold {
+                let result = busy.update(
+                    status: .tool,
+                    toolName: "search",
+                    hint: hint,
+                    lastActivityAt: Int64(100 + event),
+                    at: Double(event)
+                )
+                expect(result == nil, "\(hint.rawValue) suppresses swamped mood while active")
+            }
+            expect(busy.nextDeadline(after: Double(PetPoseMoodTracker.busyToolStartThreshold - 1)) == nil, "\(hint.rawValue) suppresses mood wakeups while active")
+            expect(busy.update(status: .tool, toolName: "search", hint: nil, lastActivityAt: 104, at: 4.1) == .swampedLeft, "clearing \(hint.rawValue) restores the current swamped state")
+
+            var proud = PetPoseMoodTracker()
+            _ = proud.update(status: .working, toolName: nil, lastActivityAt: Int64(200 + index), at: 0)
+            expect(proud.update(status: .success, toolName: nil, hint: hint, lastActivityAt: Int64(210 + index), at: PetPoseMoodTracker.proudAfterWork) == nil, "\(hint.rawValue) suppresses proud mood while active")
+            expect(proud.update(status: .success, toolName: nil, hint: nil, lastActivityAt: Int64(210 + index), at: PetPoseMoodTracker.proudAfterWork + 1) == .proud, "clearing \(hint.rawValue) restores proud success feedback")
+        }
+    }
+
+    private static func testFatiguePriorityAndWakeups() {
+        var busyWins = PetPoseMoodTracker()
+        _ = busyWins.update(status: .working, toolName: nil, lastActivityAt: 300, at: 0)
+        var finalBurstResult: PetPoseMood?
+        for event in 0..<PetPoseMoodTracker.busyToolStartThreshold {
+            finalBurstResult = busyWins.update(
+                status: .tool,
+                toolName: "search",
+                lastActivityAt: Int64(301 + event),
+                at: PetPoseMoodTracker.tiredAfterWork + Double(event) * 0.1
+            )
+        }
+        expect(finalBurstResult == .swampedLeft, "a qualifying busy burst outranks fatigue when both conditions are true")
+        expect(busyWins.nextDeadline(after: PetPoseMoodTracker.tiredAfterWork + 0.4) == PetPoseMoodTracker.tiredAfterWork + 10.001, "the active busy window schedules one expiry wake instead of repeating tired wakeups")
+        expect(busyWins.advance(at: PetPoseMoodTracker.tiredAfterWork + 10) == .swampedLeft, "the oldest tool start remains in the inclusive ten-second window")
+        expect(busyWins.advance(at: PetPoseMoodTracker.tiredAfterWork + 10.001) == .tired, "fatigue appears after the busy priority expires")
+        expect(busyWins.nextDeadline(after: PetPoseMoodTracker.tiredAfterWork + 10.001) == nil, "fatigue settles without repeated wakeups")
+
+        var proudWins = PetPoseMoodTracker()
+        _ = proudWins.update(status: .working, toolName: nil, lastActivityAt: 400, at: 0)
+        expect(proudWins.advance(at: PetPoseMoodTracker.tiredAfterWork + 0.001) == .tired, "working status alone reaches the fatigue mood")
+        expect(proudWins.update(status: .success, toolName: nil, lastActivityAt: 401, at: PetPoseMoodTracker.tiredAfterWork + 1) == .proud, "proud success feedback retains priority over accumulated fatigue")
     }
 
     private static func testHintPriorityInterruptAndStandby() {
@@ -306,6 +364,7 @@ struct PetPoseTimelineChecks {
     }
 
     private static func expect(_ condition: @autoclosure () -> Bool, _ message: String) {
+        checkCount += 1
         guard condition() else { fatalError("CHECK FAILED: \(message)") }
     }
 }

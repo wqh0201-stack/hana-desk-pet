@@ -7,7 +7,7 @@ PACKAGE_DIR="$PROJECT_ROOT/pet-macos"
 INFO_PLIST="$PACKAGE_DIR/Resources/Info.plist"
 DIST_DIR="$PROJECT_ROOT/dist"
 APP_NAME="HanaDesktopPet"
-APP_BUNDLE_NAME="$APP_NAME-crosspet-v0.5.2-local"
+APP_BUNDLE_NAME="$APP_NAME-crosspet-v0.5.4-local"
 APP_BUNDLE="$DIST_DIR/$APP_BUNDLE_NAME.app"
 
 if [ ! -f "$INFO_PLIST" ]; then

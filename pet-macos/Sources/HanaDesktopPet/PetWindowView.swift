@@ -11,9 +11,19 @@ final class PetWindowView: NSView, NSMenuDelegate {
     private var dragStartWindowOrigin: NSPoint?
     private weak var attachedWindow: NSWindow?
 
-    init(model: PetViewModel, artworkCatalog: PetArtworkCatalog?, layout: PetCharacterLayout) {
+    init(
+        model: PetViewModel,
+        artworkCatalog: PetArtworkCatalog?,
+        layout: PetCharacterLayout,
+        poseReadback: PetPoseReadbackStore = .shared
+    ) {
         self.model = model
-        self.artwork = PetCharacterView(catalog: artworkCatalog, layout: layout, frame: .zero)
+        self.artwork = PetCharacterView(
+            catalog: artworkCatalog,
+            layout: layout,
+            poseReadback: poseReadback,
+            frame: .zero
+        )
         super.init(frame: NSRect(
             x: 0,
             y: 0,
@@ -263,6 +273,7 @@ private final class PetCharacterView: NSView {
 
     private let catalog: PetArtworkCatalog?
     private let layout: PetCharacterLayout
+    private let poseReadback: PetPoseReadbackStore
     private(set) var roleId = "claude"
     private(set) var status: PetActivityStatus = .idle
     private var basePose = "idle"
@@ -285,9 +296,15 @@ private final class PetCharacterView: NSView {
     private var reducedMotionObserver: NSObjectProtocol?
     var onActivate: (() -> Void)?
 
-    init(catalog: PetArtworkCatalog?, layout: PetCharacterLayout, frame frameRect: NSRect) {
+    init(
+        catalog: PetArtworkCatalog?,
+        layout: PetCharacterLayout,
+        poseReadback: PetPoseReadbackStore,
+        frame frameRect: NSRect
+    ) {
         self.catalog = catalog
         self.layout = layout
+        self.poseReadback = poseReadback
         super.init(frame: frameRect)
         setAccessibilityElement(true)
         setAccessibilityRole(.button)
@@ -435,9 +452,14 @@ private final class PetCharacterView: NSView {
         )
         let preferredPose = PetPosePlanner.preferredPose(for: status, toolName: currentToolName, hint: activeHint)
         let workPose = PetPosePlanner.resolvedPose(preferred: preferredPose, availablePoseNames: availablePoseNames)
-        basePose = activeHint == nil
-            ? (mood.map { PetPoseMood.resolvedPose(for: $0, workPose: workPose, availablePoseNames: availablePoseNames) } ?? workPose)
-            : workPose
+        let fallback: Bool
+        if activeHint == nil, let mood {
+            basePose = PetPoseMood.resolvedPose(for: mood, workPose: workPose, availablePoseNames: availablePoseNames)
+            fallback = basePose != primaryPose(for: mood)
+        } else {
+            basePose = workPose
+            fallback = basePose != preferredPose
+        }
         displayedLayers = timeline.update(
             status: status,
             basePose: basePose,
@@ -447,8 +469,21 @@ private final class PetCharacterView: NSView {
             hint: activeHint,
             at: time
         )
+        poseReadback.update(characterId: roleId, pose: basePose, fallback: fallback)
         needsDisplay = true
         scheduleWake(at: time)
+    }
+
+    /// The first candidate of PetPoseMood.resolvedPose, used only to report whether
+    /// that existing fallback chain had to choose a substitute artwork.
+    private func primaryPose(for mood: PetPoseMood) -> String {
+        switch mood {
+        case .sleeping: return "sleeping"
+        case .tired: return "tired"
+        case .swampedLeft: return "swamped_left"
+        case .swampedRight: return "swamped_right"
+        case .proud: return "proud"
+        }
     }
 
     private func advanceTimeline(at time: TimeInterval) {

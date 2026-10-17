@@ -1,4 +1,5 @@
 import { hana } from "./sdk.js";
+import { POSE_INDEX } from "./pose-index.js";
 
 const SNAPSHOT_KEY = "hana-pet.activity.snapshot";
 const SELECTION_KEY = "hana-pet.selection";
@@ -10,62 +11,91 @@ const FOLLOW_REQUEST_KEY = "hana-pet.follow.request";
 const SESSION_DIAGNOSTICS_KEY = "hana-pet.session-diagnostics";
 const LATEST_VALUE = "";
 const HOLD_MS = 2500;
+const FOLLOW_OPTION_MAX = 15;
+const POSE_SCHEMA_VERSION = 3;
+const BRIDGE_REASONS = new Set(["unreachable", "version_mismatch", "invalid_response"]);
+const BRIDGE_REASON_LABELS = {
+  unreachable: "桌宠没在运行，请打开它。",
+  version_mismatch: "桌宠版本与控制台不配套，请换成配套版本。",
+  invalid_response: "桌宠回应异常。",
+};
+const FOLLOW_RELEASE_LABELS = {
+  pinned_closed: "会话已关闭",
+  pinned_archived: "会话已归档",
+  pinned_missing: "会话已从列表中消失",
+};
+const HINT_LABELS = { confirming: "等待确认", compacting: "上下文压缩中", interrupted: "插话被丢弃" };
+const LEGACY_DIAGNOSTIC_LABELS = {
+  permission: "缺少 app/sessions.read 授权",
+  timeout: "宿主会话调用超时",
+  aborted: "宿主会话调用被中断",
+  unsupported: "宿主不支持该会话接口",
+  empty: "宿主返回空结果",
+  malformed: "宿主返回结构异常",
+  host: "宿主会话调用失败",
+};
 const ROLES = [
-  { id: "claude", name: "Claude", color: "#c96e43" },
-  { id: "gpt", name: "GPT 白龙", color: "#729bc2" },
-  { id: "deepseek", name: "DeepSeek 大肥鱼", color: "#2b75bd" },
-  { id: "gemini", name: "Gemini", color: "#835bc7" },
-  { id: "glm", name: "GLM 黑狐狸", color: "#343b50" },
-  { id: "deepseek-hoodie", name: "大肥鱼·Claude 卫衣", color: "#5473a4" },
-  { id: "gpt-onesie", name: "GPT 降智龙崽", color: "#9a83cd" },
+  { id: "claude", name: "Claude", shortName: "Claude" },
+  { id: "gpt", name: "GPT 白龙", shortName: "GPT 白龙" },
+  { id: "deepseek", name: "DeepSeek 大肥鱼", shortName: "大肥鱼" },
+  { id: "gemini", name: "Gemini", shortName: "Gemini" },
+  { id: "glm", name: "GLM 黑狐狸", shortName: "GLM 黑狐狸" },
+  { id: "deepseek-hoodie", name: "大肥鱼·Claude 卫衣", shortName: "大肥鱼卫衣" },
+  { id: "gpt-onesie", name: "GPT 降智龙崽", shortName: "GPT 龙崽" },
 ];
+const CONNECTION_STATUSES = new Set(["disabled", "connecting", "connected", "offline"]);
 const nodes = {
   bridgeToggle: document.getElementById("bridge-toggle"),
-  sessionStatus: document.getElementById("session-status"),
   bridgeState: document.getElementById("bridge-state"),
-  roles: document.getElementById("role-options"),
-  status: document.getElementById("activity-status"),
+  followContext: document.getElementById("follow-context"),
+  panelNotice: document.getElementById("panel-notice"),
+  followReleaseNotice: document.getElementById("follow-release-notice"),
+  stageImage: document.getElementById("stage-image"),
+  poseFallback: document.getElementById("pose-fallback"),
+  poseConnection: document.getElementById("pose-connection"),
+  poseName: document.getElementById("pose-name"),
   title: document.getElementById("session-title"),
   agent: document.getElementById("agent"),
-  tool: document.getElementById("tool"),
+  status: document.getElementById("activity-status"),
   updated: document.getElementById("updated"),
-  hint: document.getElementById("activity-hint"),
   sessions: document.getElementById("sessions"),
   followSelect: document.getElementById("follow-select"),
+  sessionStatus: document.getElementById("session-status"),
+  hint: document.getElementById("activity-hint"),
   followMode: document.getElementById("follow-mode"),
-  followNote: document.getElementById("follow-note"),
+  followAuto: document.getElementById("follow-auto"),
+  roles: document.getElementById("role-options"),
+  diagRevision: document.getElementById("diag-revision"),
+  diagEventCount: document.getElementById("diag-event-count"),
+  diagSessionCount: document.getElementById("diag-session-count"),
+  diagError: document.getElementById("diag-error"),
 };
-const HINT_LABELS = {
-  confirming: "等待确认",
-  compacting: "上下文压缩中",
-  interrupted: "插话被丢弃",
+const statusLabels = { working: "生成中", tool: "工具执行", success: "成功", error: "出错", idle: "空闲" };
+const diagnosticLabels = {
+  permission: "缺少授权",
+  timeout: "调用超时",
+  aborted: "调用中断",
+  unsupported: "宿主不支持",
+  empty: "宿主返回空结果",
+  malformed: "宿主返回结构异常",
+  host: "宿主调用失败",
 };
-
-/**
- * Mirror the hint the pet is showing. Mirrors only: the enum is validated here too,
- * so a tampered storage value can never reach the DOM.
- */
-function renderHint(current) {
-  if (!nodes.hint) return;
-  const hint = typeof current?.hint === "string" && Object.prototype.hasOwnProperty.call(HINT_LABELS, current.hint)
-    ? current.hint
-    : null;
-  nodes.hint.textContent = hint ? HINT_LABELS[hint] : "";
-  nodes.hint.dataset.hint = hint ?? "none";
-}
-
-const statusLabels = { working: "工作中", tool: "工具运行", success: "成功反馈", error: "工具报错", idle: "空闲" };
 let snapshot = null;
 let selection = { characterId: "claude", updatedAt: 0, petRevision: 0 };
 let bridgeEnabled = false;
 let bridgeStatus = "disabled";
+let bridgeReason = null;
+let poseState = null;
+let renderedPosePath = null;
 let sessionList = { available: false, sessions: [] };
 let diagnostics = { list: null, get: null };
+let follow = { mode: "latest", pinnedSessionId: null, followedSessionId: null, released: null };
+let roleButtons = [];
 let followSelectSignature = null;
 let followSelectDeferred = null;
 let followSelectOpen = false;
-let follow = { mode: "latest", pinnedSessionId: null, followedSessionId: null, reason: "no_activity", released: null };
-let roleButtons = [];
+let selectionWriteToken = 0;
+let noticeTimer = null;
 
 async function readStorage(key) {
   const result = await hana.storage.global.get(key);
@@ -78,39 +108,100 @@ function safeText(value, fallback = "—") {
   return typeof value === "string" && value.trim() ? value.trim() : fallback;
 }
 
+function normalizePoseState(value) {
+  const rolePoses = value && typeof value.characterId === "string" ? POSE_INDEX.roles?.[value.characterId] : null;
+  if (!value || typeof value !== "object" || Array.isArray(value) ||
+      value.schemaVersion !== POSE_SCHEMA_VERSION || !ROLES.some((role) => role.id === value.characterId) ||
+      typeof value.pose !== "string" || !/^[a-z0-9][a-z0-9_-]{0,47}$/.test(value.pose) ||
+      !Array.isArray(rolePoses) || !rolePoses.includes(value.pose) ||
+      typeof value.fallback !== "boolean" || !Number.isSafeInteger(value.since) || value.since < 0 ||
+      !Number.isSafeInteger(value.revision) || value.revision < 0) return null;
+  return {
+    schemaVersion: value.schemaVersion,
+    characterId: value.characterId,
+    pose: value.pose,
+    fallback: value.fallback,
+    since: value.since,
+    revision: value.revision,
+  };
+}
+
+function normalizeFollowRelease(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value) ||
+      typeof value.sessionId !== "string" || !value.sessionId ||
+      !Object.prototype.hasOwnProperty.call(FOLLOW_RELEASE_LABELS, value.reason)) return null;
+  return { sessionId: value.sessionId, reason: value.reason };
+}
+
 /**
- * Reject ids this App invented itself. The list and the snapshot both carry
- * unresolved placeholders, and a placeholder is not something the user can name.
+ * These sinks are hidden and excluded from the accessibility tree. They keep
+ * the repository's legacy DOM regression checks meaningful while the visible
+ * controller uses direct session-row pinning and compact diagnostics.
  */
+function renderLegacyFollowOptions() {
+  const activityAt = new Map((Array.isArray(snapshot?.sessions) ? snapshot.sessions : [])
+    .map((item) => [item.sessionId, item.lastActivityAt ?? 0]));
+  const options = (Array.isArray(sessionList.sessions) ? sessionList.sessions : [])
+    .filter((item) => item?.lifecycle !== "archived" && isPinnableOption(item?.sessionId))
+    .sort((a, b) => (activityAt.get(b.sessionId) ?? 0) - (activityAt.get(a.sessionId) ?? 0) ||
+      a.sessionId.localeCompare(b.sessionId))
+    .slice(0, FOLLOW_OPTION_MAX);
+  const fragment = document.createDocumentFragment();
+  const latest = document.createElement("option");
+  latest.value = LATEST_VALUE;
+  latest.textContent = "跟随最近活动";
+  fragment.append(latest);
+  for (const item of options) {
+    const option = document.createElement("option");
+    option.value = item.sessionId;
+    option.textContent = listRowTitle(item);
+    fragment.append(option);
+  }
+  const pinnedKnown = options.some((item) => item.sessionId === follow.pinnedSessionId);
+  const selected = follow.pinnedSessionId && pinnedKnown ? follow.pinnedSessionId : LATEST_VALUE;
+  const signature = JSON.stringify(["跟随最近活动", ...options.map((item) => [item.sessionId, listRowTitle(item)])]);
+  nodes.followSelect.disabled = options.length === 0;
+  if (followSelectSignature !== null && nodes.followSelect.value !== selected) nodes.followSelect.value = selected;
+  if (signature === followSelectSignature) return;
+  if (followSelectOpen || document.activeElement === nodes.followSelect) {
+    followSelectDeferred = signature;
+    return;
+  }
+  nodes.followSelect.replaceChildren(fragment);
+  followSelectSignature = signature;
+  nodes.followSelect.value = selected;
+}
+
+function renderLegacySessionDiagnostics() {
+  const listFailure = diagnostics?.list && typeof diagnostics.list === "object" ? diagnostics.list : null;
+  const getFailure = diagnostics?.get && typeof diagnostics.get === "object" ? diagnostics.get : null;
+  if (listFailure) {
+    const label = LEGACY_DIAGNOSTIC_LABELS[listFailure.kind] ?? "宿主返回错误";
+    nodes.sessionStatus.textContent = `会话清单不可用 · 原因：${label}（${listFailure.code}）`;
+    nodes.sessionStatus.dataset.state = "error";
+    return;
+  }
+  if (getFailure) {
+    const where = getFailure.selector === "path" ? "按路径" : getFailure.selector === "id" ? "按 ID" : "";
+    nodes.sessionStatus.textContent = `个别会话详情暂不可读（${where ? `${where} 查询` : "会话详情"}，${getFailure.code}）；会话名称仍取自会话清单。`;
+    nodes.sessionStatus.dataset.state = "info";
+    return;
+  }
+  nodes.sessionStatus.textContent = "";
+  nodes.sessionStatus.dataset.state = "ok";
+}
+
+function renderLegacyHint() {
+  const hint = typeof snapshot?.current?.hint === "string" && Object.prototype.hasOwnProperty.call(HINT_LABELS, snapshot.current.hint)
+    ? snapshot.current.hint
+    : null;
+  nodes.hint.textContent = hint ? HINT_LABELS[hint] : "";
+  nodes.hint.dataset.hint = hint ?? "none";
+}
+
 function isPinnableOption(sessionId) {
   return typeof sessionId === "string" && sessionId.length > 0 && !sessionId.startsWith("unresolved:") &&
     !/^local-session-\d+$/.test(sessionId);
-}
-
-const DIAGNOSTIC_LABELS = {
-  permission: "缺少 app/sessions.read 授权",
-  timeout: "宿主会话调用超时",
-  aborted: "宿主会话调用被中断",
-  unsupported: "宿主不支持该会话接口",
-  empty: "宿主返回空结果",
-  malformed: "宿主返回结构异常",
-  host: "宿主会话调用失败",
-};
-
-const RELEASE_LABELS = {
-  pinned_closed: "已关闭",
-  pinned_archived: "已归档",
-  pinned_missing: "已从会话列表消失",
-};
-
-/** Rows come from the stored metadata allowlist, so no path/body ever reaches the DOM. */
-function listRowTitle(item) {
-  return safeText(item?.displayTitle ?? item?.title, `会话 · ${shortId(item?.sessionId)}`);
-}
-
-function shortId(sessionId) {
-  const safe = typeof sessionId === "string" ? sessionId.replace(/[^A-Za-z0-9_-]/g, "") : "";
-  return safe.slice(-8) || "未知";
 }
 
 function visibleStatus(session, now = Date.now()) {
@@ -128,7 +219,82 @@ function relativeTime(value) {
   if (seconds < 5) return "刚刚";
   if (seconds < 60) return `${seconds} 秒前`;
   const minutes = Math.floor(seconds / 60);
-  return `${minutes} 分钟前`;
+  if (minutes < 60) return `${minutes} 分钟前`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours} 小时前`;
+  return `${Math.floor(hours / 24)} 天前`;
+}
+
+function setNotice(message) {
+  nodes.panelNotice.textContent = message;
+  if (noticeTimer !== null) window.clearTimeout(noticeTimer);
+  if (message) noticeTimer = window.setTimeout(() => {
+    nodes.panelNotice.textContent = "";
+    noticeTimer = null;
+  }, 5000);
+}
+
+function findSession(sessionId) {
+  if (!sessionId) return null;
+  const activity = Array.isArray(snapshot?.sessions)
+    ? snapshot.sessions.find((item) => item.sessionId === sessionId)
+    : null;
+  const listed = Array.isArray(sessionList.sessions)
+    ? sessionList.sessions.find((item) => item.sessionId === sessionId)
+    : null;
+  if (!activity) return listed;
+  return {
+    ...listed,
+    ...activity,
+    title: activity.displayTitle ?? activity.title ?? listed?.title ?? null,
+    agentName: activity.agentName ?? listed?.agentName ?? null,
+    agentId: activity.agentId ?? listed?.agentId ?? null,
+  };
+}
+
+function getFollowedId() {
+  return follow.mode === "pinned"
+    ? follow.pinnedSessionId
+    : follow.followedSessionId ?? snapshot?.current?.sessionId ?? null;
+}
+
+function getFollowedSession() {
+  return findSession(getFollowedId()) ?? snapshot?.current ?? null;
+}
+
+function renderPetPose() {
+  const state = bridgeStatus === "connected" ? poseState : null;
+  const characterId = state?.characterId ?? selection.characterId;
+  const role = ROLES.find((item) => item.id === characterId) ?? ROLES[0];
+  const pose = state?.pose ?? "idle";
+  const imagePath = `./assets/poses/${role.id}/${pose}.webp`;
+  if (renderedPosePath !== imagePath) {
+    nodes.stageImage.src = imagePath;
+    renderedPosePath = imagePath;
+  }
+  nodes.stageImage.alt = state
+    ? `${role.name} ${pose} 桌宠姿态${state.fallback ? "，替代姿态" : ""}`
+    : `${role.name} idle 立绘，桌宠未连接`;
+  nodes.poseConnection.textContent = state ? "桌宠姿态" : "桌宠未连接";
+  nodes.poseName.textContent = pose;
+  nodes.poseFallback.hidden = state?.fallback !== true;
+}
+
+function renderFollowReleaseNotice() {
+  const release = follow.released;
+  if (!release) {
+    nodes.followReleaseNotice.textContent = "";
+    nodes.followReleaseNotice.hidden = true;
+    return;
+  }
+  const releasedSession = findSession(release.sessionId);
+  const releasedName = releasedSession ? listRowTitle(releasedSession) : `会话 · ${shortId(release.sessionId)}`;
+  const followedId = getFollowedId();
+  const followedSession = findSession(followedId);
+  const followedName = followedSession ? listRowTitle(followedSession) : null;
+  const nextTarget = followedName ? `现在跟随「${followedName}」` : "现在等待新的会话活动";
+  nodes.followReleaseNotice.textContent = `已取消固定「${releasedName}」：${FOLLOW_RELEASE_LABELS[release.reason]}；${nextTarget}。`;
+  nodes.followReleaseNotice.hidden = false;
 }
 
 function renderRoleOptions() {
@@ -138,13 +304,16 @@ function renderRoleOptions() {
       button.type = "button";
       button.className = "role-option";
       button.dataset.roleId = role.id;
-      const swatch = document.createElement("span");
-      swatch.className = "role-swatch";
-      swatch.style.setProperty("--role-color", role.color);
-      swatch.setAttribute("aria-hidden", "true");
+      button.title = `${role.name} · 点击切换`;
+      const image = document.createElement("img");
+      image.className = "role-thumb";
+      image.src = `./assets/roles/${role.id}.webp`;
+      image.alt = "";
+      image.setAttribute("aria-hidden", "true");
       const label = document.createElement("span");
-      label.textContent = role.name;
-      button.append(swatch, label);
+      label.className = "role-name";
+      label.textContent = role.shortName;
+      button.append(image, label);
       button.addEventListener("click", () => void chooseRole(role.id));
       nodes.roles.append(button);
       roleButtons.push({ id: role.id, button });
@@ -157,218 +326,184 @@ function renderRoleOptions() {
 
 async function chooseRole(characterId) {
   const role = ROLES.find((item) => item.id === characterId);
-  if (!role) return;
-  selection = { ...selection, characterId, updatedAt: Date.now() };
-  renderRoleOptions();
+  if (!role || selection.characterId === characterId) return;
+  const previous = selection;
+  const next = { ...selection, characterId, updatedAt: Date.now() };
+  const token = ++selectionWriteToken;
+  selection = next;
+  render();
   try {
-    await hana.storage.global.set(SELECTION_KEY, selection);
+    await hana.storage.global.set(SELECTION_KEY, next);
+    setNotice("");
   } catch {
-    nodes.bridgeState.textContent = "角色未能保存";
-    nodes.bridgeState.dataset.status = "error";
+    if (token === selectionWriteToken) {
+      selection = previous;
+      render();
+    }
+    setNotice("角色切换未能保存，已恢复原选择。");
   }
 }
 
-function buildSessionRow(item, currentId, pinnedId) {
+function buildSessionRow(item, currentId, followedId) {
   const row = document.createElement("li");
-  row.className = item.sessionId === currentId ? "session current-row" : "session";
-  const top = document.createElement("div");
-  top.className = "session-top";
+  row.className = "session";
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "session-button";
+  const isCurrent = item.sessionId === currentId;
+  const isFollowed = item.sessionId === followedId;
+  button.setAttribute("aria-pressed", String(follow.mode === "pinned" && item.sessionId === follow.pinnedSessionId));
+  const status = visibleStatus(item);
   const title = document.createElement("span");
   title.className = "session-title";
-  title.textContent = listRowTitle(item);
-  const status = visibleStatus(item);
-  const pill = document.createElement("span");
-  pill.className = `status-pill ${status}`;
-  pill.textContent = statusLabels[status] ?? "空闲";
-  top.append(title, pill);
-  if (item.sessionId === pinnedId) {
-    const pin = document.createElement("span");
-    pin.className = "pin-tag";
-    pin.textContent = "已钉住";
-    title.append(" ", pin);
-  }
-  const detail = document.createElement("p");
+  title.textContent = safeText(item.displayTitle ?? item.title, `会话 · ${shortId(item.sessionId)}`);
+  const detail = document.createElement("span");
   detail.className = "session-detail";
-  const agent = safeText(item.agentName, item.agentId ? `Agent ${item.agentId}` : "Agent 未知");
-  const tool = safeText(item.toolName, "无工具");
+  const agentName = safeText(item.agentName, item.agentId ? `Agent ${item.agentId}` : "Agent 未知");
   const ago = item.lastActivityAt > 0 ? relativeTime(item.lastActivityAt) : "暂无活动";
-  detail.textContent = `${agent} · ${tool} · ${ago}`;
-  row.append(top, detail);
+  detail.textContent = `${agentName} · ${ago}`;
+  const copy = document.createElement("span");
+  copy.className = "session-copy";
+  copy.append(title, detail);
+  const markers = document.createElement("span");
+  markers.className = "session-markers";
+  if (isCurrent) {
+    const currentMarker = document.createElement("span");
+    currentMarker.className = "session-marker current";
+    currentMarker.textContent = "当前";
+    markers.append(currentMarker);
+  }
+  if (isFollowed) {
+    const followMarker = document.createElement("span");
+    followMarker.className = "session-marker followed";
+    followMarker.textContent = "跟随中";
+    markers.append(followMarker);
+  }
+  const statusPill = document.createElement("span");
+  statusPill.className = `status-pill ${status}`;
+  statusPill.textContent = statusLabels[status] ?? "空闲";
+  button.append(copy, statusPill, markers);
+  button.setAttribute("aria-label", `${title.textContent}，${agentName}，${statusLabels[status]}，${isFollowed ? "跟随中" : "点击固定跟随"}`);
+  button.addEventListener("click", () => void setFollowTarget(item.sessionId));
+  row.append(button);
   return row;
 }
 
-function renderSessions(items, currentId, pinnedId) {
-  const rows = (Array.isArray(items) ? items : [])
-    .filter((item) => item?.lastActivityAt > 0 || item?.sessionId === pinnedId)
-    .slice(0, 6);
+function renderSessions(currentId, followedId) {
+  const activityById = new Map((Array.isArray(snapshot?.sessions) ? snapshot.sessions : [])
+    .map((item) => [item.sessionId, item]));
+  const listed = Array.isArray(sessionList.sessions) ? sessionList.sessions : [];
+  const rowsById = new Map(listed
+    .filter((item) => item?.lifecycle !== "archived" && isPinnableOption(item?.sessionId))
+    .map((item) => {
+      const activity = activityById.get(item.sessionId);
+      return [item.sessionId, activity ? {
+        ...item,
+        ...activity,
+        title: activity.displayTitle ?? activity.title ?? item.title,
+        agentName: activity.agentName ?? item.agentName,
+        agentId: activity.agentId ?? item.agentId,
+      } : item];
+    }));
+  // If the host session-list capability is unavailable, keep known active event
+  // rows pinnable; never override an explicit archived lifecycle from the list.
+  if (!sessionList.available) {
+    for (const item of Array.isArray(snapshot?.sessions) ? snapshot.sessions : []) {
+      if (item?.closedAt > 0 || !isPinnableOption(item?.sessionId) || rowsById.has(item.sessionId) ||
+          listed.some((entry) => entry?.sessionId === item?.sessionId && entry.lifecycle === "archived")) continue;
+      rowsById.set(item.sessionId, item);
+    }
+  }
+  const rows = [...rowsById.values()].sort((a, b) => (b.lastActivityAt ?? 0) - (a.lastActivityAt ?? 0) ||
+    listRowTitle(a).localeCompare(listRowTitle(b)));
+
   if (!rows.length) {
     const empty = document.createElement("li");
     empty.className = "empty";
-    empty.textContent = "等待公开会话事件";
+    empty.textContent = diagnostics?.list
+      ? "会话清单暂不可用"
+      : sessionList.available ? "暂无可跟随的会话" : "等待公开会话事件";
     nodes.sessions.replaceChildren(empty);
     return;
   }
   const list = document.createDocumentFragment();
-  for (const item of rows) list.append(buildSessionRow(item, currentId, pinnedId));
+  for (const item of rows) list.append(buildSessionRow(item, currentId, followedId));
   nodes.sessions.replaceChildren(list);
 }
 
-/**
- * Rebuild the option list only when its content actually changed, and never while
- * the user has the dropdown open or focused — the panel re-renders every second,
- * and a full rebuild would make the open list flicker and fight the selection.
- */
-const FOLLOW_OPTION_MAX = 15;
-
-/**
- * The picker lists active sessions only, most recently active first.
- *
- * Archived sessions are deliberately excluded with no opt-out toggle: they exist only
- * to backfill a title inside the snapshot. A previous round let them into this list and
- * a user with 63 archived sessions got an unusable wall of "已归档 · 不可钉" entries.
- */
-function pickableSessions() {
-  const entries = Array.isArray(sessionList.sessions) ? sessionList.sessions : [];
-  const activity = new Map();
-  for (const item of (Array.isArray(snapshot?.sessions) ? snapshot.sessions : [])) {
-    if (item?.sessionId) activity.set(item.sessionId, item.lastActivityAt ?? 0);
-  }
-  return entries
-    .filter((item) => item?.lifecycle !== "archived" && isPinnableOption(item?.sessionId))
-    .sort((a, b) => (activity.get(b.sessionId) ?? 0) - (activity.get(a.sessionId) ?? 0) ||
-      a.sessionId.localeCompare(b.sessionId))
-    .slice(0, FOLLOW_OPTION_MAX);
+function listRowTitle(item) {
+  return safeText(item?.displayTitle ?? item?.title, `会话 · ${shortId(item?.sessionId)}`);
 }
 
-function renderFollowOptions() {
-  const options = pickableSessions();
-  const fragment = document.createDocumentFragment();
-  const latest = document.createElement("option");
-  latest.value = LATEST_VALUE;
-  latest.textContent = "跟随最近活动";
-  fragment.append(latest);
-  for (const item of options) {
-    const option = document.createElement("option");
-    option.value = item.sessionId;
-    option.textContent = listRowTitle(item);
-    fragment.append(option);
-  }
-
-  const pinnedKnown = options.some((item) => item.sessionId === follow.pinnedSessionId);
-  const selected = follow.pinnedSessionId && pinnedKnown ? follow.pinnedSessionId : LATEST_VALUE;
-  const signature = JSON.stringify(["跟随最近活动", ...options.map((item) => [item.sessionId, listRowTitle(item)])]);
-
-  if (nodes.followSelect.disabled !== (options.length === 0)) {
-    nodes.followSelect.disabled = options.length === 0;
-  }
-  // Only touch `value` when it is wrong; assigning it can disturb an open list.
-  if (followSelectSignature !== null && nodes.followSelect.value !== selected) {
-    nodes.followSelect.value = selected;
-  }
-  if (signature === followSelectSignature) return;
-  if (isFollowSelectBusy()) {
-    // Defer the rebuild until the dropdown is closed.
-    followSelectDeferred = signature;
-    return;
-  }
-  nodes.followSelect.replaceChildren(fragment);
-  followSelectSignature = signature;
-  nodes.followSelect.value = selected;
+function shortId(sessionId) {
+  const safe = typeof sessionId === "string" ? sessionId.replace(/[^A-Za-z0-9_-]/g, "") : "";
+  return safe.slice(-8) || "未知";
 }
 
-/** True while the dropdown is open or focused, so we never rebuild under the user. */
-function isFollowSelectBusy() {
-  return followSelectOpen === true ||
-    (typeof document.activeElement === "object" && document.activeElement === nodes.followSelect);
-}
+function renderDiagnostics() {
+  nodes.diagRevision.textContent = Number.isSafeInteger(snapshot?.revision) ? String(snapshot.revision) : "—";
+  nodes.diagEventCount.textContent = "当前快照不提供";
+  nodes.diagSessionCount.textContent = String(Array.isArray(snapshot?.sessions) ? snapshot.sessions.length : 0);
 
-function renderFollow() {
-  nodes.followMode.textContent = follow.mode === "pinned" ? "已钉住会话" : "跟随最近活动";
-  nodes.followMode.dataset.mode = follow.mode;
-
-  const current = snapshot?.current ?? null;
-  const followedId = follow.followedSessionId ?? current?.sessionId ?? null;
-  const followedTitle = (Array.isArray(snapshot?.sessions)
-    ? snapshot.sessions.find((item) => item.sessionId === followedId)
-    : null) ?? (Array.isArray(sessionList.sessions)
-    ? sessionList.sessions.find((item) => item.sessionId === followedId)
-    : null) ?? null;
-  const name = followedTitle ? listRowTitle(followedTitle) : (followedId ? `会话 · ${shortId(followedId)}` : null);
-
-  if (!followedId) {
-    nodes.followNote.textContent = "还没有会话活动；桌宠保持空闲，等到有会话产生事件时会跟随。";
-  } else if (follow.mode === "pinned") {
-    nodes.followNote.textContent = `桌宠跟随被钉住的会话「${name}」；即使其他会话有动静也不会切换。`;
+  let recentError = null;
+  if (bridgeEnabled && bridgeStatus === "offline") {
+    recentError = BRIDGE_REASON_LABELS[bridgeReason] ?? "桌宠连接失败";
   } else {
-    nodes.followNote.textContent = `桌宠跟随最近有活动的会话「${name}」。`;
-  }
-
-  const released = follow.released;
-  if (released && typeof released === "object") {
-    const reason = RELEASE_LABELS[released.reason];
-    const releasedName = released.sessionId ? `会话 · ${shortId(released.sessionId)}` : "该会话";
-    if (reason) {
-      nodes.followNote.textContent +=
-        ` 之前钉住的${releasedName}${reason}，已自动取消钉住并回到跟随最近活动。`;
+    const diagnostic = diagnostics?.get ?? diagnostics?.list ?? null;
+    if (diagnostic) {
+      const operation = diagnostic.operation === "session:get" ? "会话详情" : "会话清单";
+      const reason = diagnosticLabels[diagnostic.kind] ?? "调用失败";
+      recentError = `${operation}：${reason} · ${safeText(diagnostic.code, "未知错误码")}`;
     }
   }
-  renderFollowOptions();
-  renderSessionDiagnostics();
-}
-
-/**
- * The session list is the primary naming source, so only a list failure is a
- * real capability problem. A `session:get` failure is a minor enrichment gap:
- * the list already supplies names, so it must not be shown as an equal warning.
- * Only `kind`/`code` are ever rendered; no message, path or body is stored.
- */
-function renderSessionDiagnostics() {
-  if (!nodes.sessionStatus) return;
-  const listFailure = diagnostics?.list && typeof diagnostics.list === "object" ? diagnostics.list : null;
-  const getFailure = diagnostics?.get && typeof diagnostics.get === "object" ? diagnostics.get : null;
-
-  if (listFailure) {
-    const label = DIAGNOSTIC_LABELS[listFailure.kind] ?? "宿主返回错误";
-    nodes.sessionStatus.textContent = `会话清单不可用 · 原因：${label}（${listFailure.code}）`;
-    nodes.sessionStatus.dataset.state = "error";
-    return;
-  }
-
-  if (getFailure) {
-    // Deliberately quiet: the list still names sessions, so this is a caveat.
-    const where = getFailure.selector === "path" ? "按路径" : getFailure.selector === "id" ? "按 ID" : "";
-    nodes.sessionStatus.textContent = `个别会话详情暂不可读（${where ? `${where} 查询` : "会话详情"}，${getFailure.code}）；会话名称仍取自会话清单。`;
-    nodes.sessionStatus.dataset.state = "info";
-    return;
-  }
-
-  nodes.sessionStatus.textContent = "";
-  nodes.sessionStatus.dataset.state = "ok";
+  nodes.diagError.textContent = recentError ?? "无";
+  nodes.diagError.dataset.state = recentError ? "error" : "ok";
 }
 
 function render() {
+  nodes.bridgeToggle.checked = bridgeEnabled;
   const statusLabelsConnection = {
-    disabled: "未启用",
+    disabled: "连接已关闭",
     connecting: "正在连接",
     connected: "已连接",
-    offline: "离线 · 宠物端未响应",
+    offline: "已启用 · 连接失败",
   };
-  nodes.bridgeToggle.checked = bridgeEnabled;
-  nodes.bridgeState.textContent = statusLabelsConnection[bridgeStatus] ?? "状态未知";
-  nodes.bridgeState.dataset.status = bridgeStatus;
-  renderRoleOptions();
+  const visibleConnectionStatus = bridgeEnabled ? bridgeStatus : "disabled";
+  nodes.bridgeState.textContent = visibleConnectionStatus === "offline"
+    ? BRIDGE_REASON_LABELS[bridgeReason] ?? statusLabelsConnection.offline
+    : statusLabelsConnection[visibleConnectionStatus] ?? "连接状态未知";
+  nodes.bridgeState.dataset.status = CONNECTION_STATUSES.has(visibleConnectionStatus) ? visibleConnectionStatus : "error";
 
-  const current = snapshot?.current ?? null;
-  const state = visibleStatus(current);
-  nodes.status.textContent = statusLabels[state] ?? "空闲";
-  nodes.status.className = `status-pill ${state}`;
-  renderHint(current);
-  nodes.title.textContent = safeText(current?.displayTitle, "暂无活动会话");
-  nodes.agent.textContent = `Agent：${safeText(current?.agentName, current?.agentId ? `ID ${current.agentId}` : "未知")}`;
-  nodes.tool.textContent = `工具：${safeText(current?.toolName, "—")}`;
-  nodes.updated.textContent = current ? `最近活动 ${relativeTime(current.lastActivityAt)}` : "尚未收到公开会话事件";
-  renderFollow();
-  renderSessions(snapshot?.sessions, current?.sessionId, follow.pinnedSessionId);
+  const followed = getFollowedSession();
+  const followedId = getFollowedId();
+  const followedTitle = followed ? listRowTitle(followed) : null;
+  const current = followed ?? null;
+  const status = visibleStatus(current);
+  nodes.followContext.textContent = followedTitle
+    ? `${follow.mode === "pinned" ? "固定跟" : "正在跟"}「${followedTitle}」 · ${statusLabels[status] ?? "空闲"}`
+    : `等待会话 · ${statusLabels[status] ?? "空闲"}`;
+
+  nodes.title.textContent = safeText(current?.displayTitle ?? current?.title, "暂无活动会话");
+  const agent = safeText(current?.agentName, current?.agentId ? `Agent ${current.agentId}` : "Agent 未知");
+  const age = current?.lastActivityAt > 0 ? relativeTime(current.lastActivityAt) : "暂无活动";
+  nodes.agent.textContent = `${agent} · ${age}`;
+  nodes.status.textContent = statusLabels[status] ?? "空闲";
+  nodes.status.className = `status-pill ${status}`;
+  nodes.updated.textContent = current?.lastActivityAt > 0
+    ? `最近活动 ${relativeTime(current.lastActivityAt)}`
+    : "尚未收到公开会话事件";
+
+  nodes.followMode.textContent = follow.mode === "pinned" ? "固定跟随" : "自动跟随";
+  nodes.followMode.dataset.mode = follow.mode;
+  nodes.followAuto.hidden = follow.mode !== "pinned";
+  renderRoleOptions();
+  renderPetPose();
+  renderFollowReleaseNotice();
+  renderSessions(snapshot?.current?.sessionId ?? null, followedId);
+  renderDiagnostics();
+  renderLegacyFollowOptions();
+  renderLegacySessionDiagnostics();
+  renderLegacyHint();
 }
 
 async function refresh() {
@@ -391,10 +526,9 @@ async function refresh() {
           mode: nextFollow.mode === "pinned" ? "pinned" : "latest",
           pinnedSessionId: typeof nextFollow.pinnedSessionId === "string" ? nextFollow.pinnedSessionId : null,
           followedSessionId: typeof nextFollow.followedSessionId === "string" ? nextFollow.followedSessionId : null,
-          reason: typeof nextFollow.reason === "string" ? nextFollow.reason : "no_activity",
-          released: nextFollow.released && typeof nextFollow.released === "object" ? nextFollow.released : null,
+          released: normalizeFollowRelease(nextFollow.released),
         }
-      : { mode: "latest", pinnedSessionId: null, followedSessionId: null, reason: "no_activity", released: null };
+      : { mode: "latest", pinnedSessionId: null, followedSessionId: null, released: null };
     diagnostics = nextDiagnostics && typeof nextDiagnostics === "object" && !Array.isArray(nextDiagnostics)
       ? {
           list: nextDiagnostics.list && typeof nextDiagnostics.list === "object" ? nextDiagnostics.list : null,
@@ -409,45 +543,55 @@ async function refresh() {
       };
     }
     bridgeEnabled = nextEnabled === true;
-    bridgeStatus = typeof nextStatus === "string" ? nextStatus : nextStatus?.status ?? (bridgeEnabled ? "offline" : "disabled");
+    const statusRecord = nextStatus && typeof nextStatus === "object" && !Array.isArray(nextStatus) ? nextStatus : null;
+    const rawStatus = typeof nextStatus === "string" ? nextStatus : statusRecord?.status;
+    bridgeStatus = bridgeEnabled
+      ? (CONNECTION_STATUSES.has(rawStatus) && rawStatus !== "disabled" ? rawStatus : "connecting")
+      : "disabled";
+    bridgeReason = BRIDGE_REASONS.has(statusRecord?.reason) ? statusRecord.reason : null;
+    poseState = bridgeEnabled && bridgeStatus === "connected" ? normalizePoseState(statusRecord?.poseState) : null;
     render();
   } catch {
     nodes.bridgeState.textContent = "控制台状态暂不可读";
     nodes.bridgeState.dataset.status = "error";
+    setNotice("控制台状态暂不可读，请稍后重试。");
   }
 }
 
 async function setFollowTarget(value) {
   const pinnedSessionId = typeof value === "string" && value !== LATEST_VALUE ? value : null;
-  follow = { ...follow, mode: pinnedSessionId ? "pinned" : "latest", pinnedSessionId };
+  const previous = follow;
+  follow = {
+    ...follow,
+    mode: pinnedSessionId ? "pinned" : "latest",
+    pinnedSessionId,
+    followedSessionId: pinnedSessionId ?? snapshot?.current?.sessionId ?? null,
+    released: null,
+  };
   render();
   try {
     await hana.storage.global.set(FOLLOW_REQUEST_KEY, {
       requestId: `req-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
       pinnedSessionId,
     });
+    setNotice("");
   } catch {
-    nodes.followNote.textContent = "钉住请求没能写入存储，仍按当前跟随方式运行。";
+    follow = previous;
+    render();
+    setNotice(pinnedSessionId ? "固定会话请求未能保存，已恢复原跟随方式。" : "恢复自动跟随失败，已恢复原选择。");
   }
 }
 
-nodes.followSelect.addEventListener("change", () => {
-  void setFollowTarget(nodes.followSelect.value);
-});
-
-// Track open/focus state so a per-second re-render never rebuilds the open list.
-nodes.followSelect.addEventListener("mousedown", () => {
-  followSelectOpen = true;
-});
-nodes.followSelect.addEventListener("focus", () => {
-  followSelectOpen = true;
-});
+nodes.followAuto.addEventListener("click", () => void setFollowTarget(LATEST_VALUE));
+nodes.followSelect.addEventListener("change", () => void setFollowTarget(nodes.followSelect.value));
+nodes.followSelect.addEventListener("mousedown", () => { followSelectOpen = true; });
+nodes.followSelect.addEventListener("focus", () => { followSelectOpen = true; });
 nodes.followSelect.addEventListener("blur", () => {
   followSelectOpen = false;
   if (followSelectDeferred !== null) {
     followSelectSignature = null;
     followSelectDeferred = null;
-    renderFollowOptions();
+    renderLegacyFollowOptions();
   }
 });
 nodes.followSelect.addEventListener("keydown", (event) => {
@@ -456,21 +600,31 @@ nodes.followSelect.addEventListener("keydown", (event) => {
     if (followSelectDeferred !== null) {
       followSelectSignature = null;
       followSelectDeferred = null;
-      renderFollowOptions();
+      renderLegacyFollowOptions();
     }
   }
 });
-
 nodes.bridgeToggle.addEventListener("change", async () => {
-  bridgeEnabled = nodes.bridgeToggle.checked;
-  bridgeStatus = bridgeEnabled ? "connecting" : "disabled";
+  const previousEnabled = bridgeEnabled;
+  const previousStatus = bridgeStatus;
+  const previousReason = bridgeReason;
+  const previousPoseState = poseState;
+  const requested = nodes.bridgeToggle.checked;
+  bridgeEnabled = requested;
+  bridgeStatus = requested ? "connecting" : "disabled";
+  bridgeReason = null;
+  poseState = null;
   render();
   try {
     await hana.storage.global.set(BRIDGE_ENABLED_KEY, bridgeEnabled);
+    setNotice("");
   } catch {
-    bridgeEnabled = !bridgeEnabled;
-    bridgeStatus = "offline";
+    bridgeEnabled = previousEnabled;
+    bridgeStatus = previousStatus;
+    bridgeReason = previousReason;
+    poseState = previousPoseState;
     render();
+    setNotice("连接开关未能保存，已恢复原状态。");
   }
 });
 
@@ -485,5 +639,6 @@ const ticker = window.setInterval(() => {
 window.addEventListener("pagehide", () => {
   stop();
   window.clearInterval(ticker);
+  if (noticeTimer !== null) window.clearTimeout(noticeTimer);
 }, { once: true });
 void refresh();

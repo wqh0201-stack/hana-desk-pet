@@ -42,7 +42,7 @@ public enum PetPoseMood: String, Equatable, Sendable {
 /// without sleeping. Tool arguments, results and conversation content are never inspected.
 public struct PetPoseMoodTracker: Sendable {
     public static let sleepAfterIdle: TimeInterval = 5 * 60
-    public static let tiredAfterWork: TimeInterval = 40 * 60
+    public static let tiredAfterWork: TimeInterval = 10 * 60
     public static let busyToolWindow: TimeInterval = 10
     public static let busyToolStartThreshold = 5
     public static let proudAfterWork: TimeInterval = 60

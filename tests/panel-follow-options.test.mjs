@@ -12,6 +12,9 @@ import fs from "node:fs";
 import vm from "node:vm";
 
 const PANEL_PATH = "apps/hana-desktop-pet/ui/assets/panel.js";
+const POSE_INDEX_PATH = "apps/hana-desktop-pet/ui/assets/pose-index.js";
+const poseIndexSource = fs.readFileSync(POSE_INDEX_PATH, "utf8");
+const { POSE_INDEX } = await import(`data:text/javascript;base64,${Buffer.from(poseIndexSource).toString("base64")}`);
 
 /**
  * Run the real panel module body against a stub DOM and return handles for
@@ -82,9 +85,11 @@ async function mountPanel(store) {
     },
   };
 
-  const patched = source.replace('import { hana } from "./sdk.js";', "");
-  const wrapped = `(async () => { const hana = __hana; ${patched} })()`;
-  const context = vm.createContext({ ...sandbox, __hana: hanaStub });
+  const patched = source
+    .replace('import { hana } from "./sdk.js";', "")
+    .replace('import { POSE_INDEX } from "./pose-index.js";', "");
+  const wrapped = `(async () => { const hana = __hana; const POSE_INDEX = __poseIndex; ${patched} })()`;
+  const context = vm.createContext({ ...sandbox, __hana: hanaStub, __poseIndex: POSE_INDEX });
   await vm.runInContext(wrapped, context, { filename: "panel.js" });
   await new Promise((resolve) => setTimeout(resolve, 60));
 

@@ -3,9 +3,11 @@ import Foundation
 
 public struct PetAPI: Sendable {
     private let store: PetStateStore
+    private let poseReadback: PetPoseReadbackStore
 
-    public init(store: PetStateStore) {
+    public init(store: PetStateStore, poseReadback: PetPoseReadbackStore = .shared) {
         self.store = store
+        self.poseReadback = poseReadback
     }
 
     public func handle(_ request: PetHTTPRequest) -> PetHTTPResponse {
@@ -16,6 +18,9 @@ public struct PetAPI: Sendable {
         case ("GET", "/v3/selection"):
             guard request.body.isEmpty else { return json(400, ["error": "invalid_request"]) }
             return json(200, selectionObject(store.currentSelection()))
+        case ("GET", "/v3/state"):
+            guard request.body.isEmpty else { return json(400, ["error": "invalid_request"]) }
+            return json(200, poseObject(poseReadback.current()))
         case ("POST", "/v3/snapshot"):
             guard hasJSONContentType(request) else { return json(415, ["error": "json_required"]) }
             do {
@@ -59,7 +64,7 @@ public struct PetAPI: Sendable {
             } catch {
                 return json(400, ["error": "invalid_selection"])
             }
-        case (_, "/v3/hello"), (_, "/v3/selection"), (_, "/v3/snapshot"):
+        case (_, "/v3/hello"), (_, "/v3/selection"), (_, "/v3/state"), (_, "/v3/snapshot"):
             return json(405, ["error": "method_not_allowed"])
         default:
             return json(404, ["error": "not_found"])
@@ -186,9 +191,101 @@ public struct PetAPI: Sendable {
         ]
     }
 
+    private func poseObject(_ state: PetPoseReadback) -> [String: Any] {
+        [
+            "schemaVersion": 3,
+            "characterId": state.characterId,
+            "pose": state.pose,
+            "fallback": state.fallback,
+            "since": state.since,
+            "revision": state.revision,
+        ]
+    }
+
     private func json(_ status: Int, _ object: [String: Any]) -> PetHTTPResponse {
         let body = (try? JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])) ?? Data("{}".utf8)
         return PetHTTPResponse(statusCode: status, body: body)
+    }
+}
+
+/// Read-only projection of the artwork pose the native renderer has already resolved.
+public struct PetPoseReadback: Equatable, Sendable {
+    public let characterId: String
+    public let pose: String
+    public let fallback: Bool
+    public let since: Int64
+    public let revision: Int64
+
+    public var schemaVersion: Int { 3 }
+
+    public init(characterId: String, pose: String, fallback: Bool, since: Int64, revision: Int64) {
+        self.characterId = characterId
+        self.pose = pose
+        self.fallback = fallback
+        self.since = max(0, since)
+        self.revision = max(0, revision)
+    }
+}
+
+/// Thread-safe handoff from AppKit's renderer to the loopback API queue.
+public final class PetPoseReadbackStore: @unchecked Sendable {
+    public static let shared = PetPoseReadbackStore()
+
+    private let lock = NSLock()
+    private var state: PetPoseReadback
+
+    public init(
+        characterId: String = "claude",
+        pose: String = "idle",
+        fallback: Bool = false,
+        since: Int64 = PetStateStore.nowMilliseconds(),
+        revision: Int64 = 0
+    ) {
+        state = PetPoseReadback(
+            characterId: characterId,
+            pose: pose,
+            fallback: fallback,
+            since: since,
+            revision: revision
+        )
+    }
+
+    public func current() -> PetPoseReadback {
+        lock.lock()
+        defer { lock.unlock() }
+        return state
+    }
+
+    @discardableResult
+    public func update(
+        characterId: String,
+        pose: String,
+        fallback: Bool,
+        now: Int64 = PetStateStore.nowMilliseconds()
+    ) -> PetPoseReadback {
+        lock.lock()
+        defer { lock.unlock() }
+
+        let poseChanged = state.characterId != characterId || state.pose != pose
+        let changed = poseChanged || state.fallback != fallback
+        guard changed else { return state }
+
+        let nextSince: Int64
+        if poseChanged {
+            let afterPrevious = state.since < Int64.max ? state.since + 1 : state.since
+            nextSince = max(max(0, now), afterPrevious)
+        } else {
+            nextSince = state.since
+        }
+        let nextRevision = state.revision < Int64.max ? state.revision + 1 : state.revision
+        state = PetPoseReadback(
+            characterId: characterId,
+            pose: pose,
+            fallback: fallback,
+            since: nextSince,
+            revision: nextRevision
+        )
+        return state
     }
 }
 

@@ -23,6 +23,7 @@ import {
 import {
   BRIDGE_ENABLED_KEY,
   BRIDGE_STATUS_KEY,
+  bridgeFailureReason,
   createSessionDiagnostics,
   FOLLOW_KEY,
   FOLLOW_REQUEST_KEY,
@@ -94,6 +95,8 @@ export default defineApp(async (sdk) => {
   let selection = normalizeSelection(savedSelection);
   let bridgeEnabled = await sdk.storage.global.get(BRIDGE_ENABLED_KEY, false) === true;
   let bridgeStatus = bridgeEnabled ? "offline" : "disabled";
+  let bridgeReason = null;
+  let bridgePoseState = null;
   // Only metadata survives here: a pinned id last seen on the list and why we follow it.
   let follow = normalizeFollow(await sdk.storage.global.get(FOLLOW_KEY, createFollow()));
   let sessionList = normalizeSessionList(await sdk.storage.global.get(SESSION_LIST_KEY, createSessionList()));
@@ -426,6 +429,7 @@ export default defineApp(async (sdk) => {
   }
 
   async function refreshFollow() {
+    const wasPinned = follow.mode === "pinned";
     const previous = JSON.stringify(followStorageValue(follow));
     // A pin carries a metadata-only seed so the target keeps a row before any activity.
     follow = resolveFollow(withPinnedSeed(follow, sessionList.sessions), {
@@ -436,12 +440,12 @@ export default defineApp(async (sdk) => {
     }).follow;
     const next = JSON.stringify(followStorageValue(follow));
     if (next !== previous) await sdk.storage.global.set(FOLLOW_KEY, followStorageValue(follow));
-    return next !== previous;
+    return wasPinned && follow.mode !== "pinned";
   }
 
-  /** Re-resolve `current` so the panel and the pet follow the pin (or its release) immediately. */
-  async function rebuildCurrentSnapshot() {
-    const next = rebuildSnapshot(snapshot, follow, Date.now());
+  /** Re-resolve `current` after follow changes; a one-shot bypass honors changed intent. */
+  async function rebuildCurrentSnapshot({ bypassHysteresis = false } = {}) {
+    const next = rebuildSnapshot(snapshot, follow, Date.now(), { bypassHysteresis });
     if (sameSnapshot(next, snapshot)) return;
     snapshot = next;
     await sdk.storage.global.set(SNAPSHOT_KEY, snapshot);
@@ -461,8 +465,8 @@ export default defineApp(async (sdk) => {
     if (nextSnapshot === snapshot) return;
     snapshot = nextSnapshot;
     await sdk.storage.global.set(SNAPSHOT_KEY, snapshot);
-    const released = await refreshFollow();
-    if (released) await rebuildCurrentSnapshot();
+    const releasedPin = await refreshFollow();
+    if (releasedPin) await rebuildCurrentSnapshot({ bypassHysteresis: true });
     requestBridgeRefresh();
   }
 
@@ -524,11 +528,16 @@ export default defineApp(async (sdk) => {
     await sdk.storage.global.set(SELECTION_KEY, selection);
   }
 
-  async function setBridgeStatus(next) {
-    if (bridgeStatus === next) return;
+  async function setBridgeStatus(next, { reason = null, poseState = null } = {}) {
+    if (bridgeStatus === next && bridgeReason === reason &&
+        JSON.stringify(bridgePoseState) === JSON.stringify(poseState)) return;
     bridgeStatus = next;
+    bridgeReason = reason;
+    bridgePoseState = poseState;
     await sdk.storage.global.set(BRIDGE_STATUS_KEY, {
-      status: next,
+      status: bridgeStatus,
+      reason: bridgeReason,
+      poseState: bridgePoseState,
       updatedAt: Date.now(),
     });
   }
@@ -568,9 +577,9 @@ export default defineApp(async (sdk) => {
       if (changed) await sdk.storage.global.set(SESSION_LIST_KEY, sessionList);
     }
     await mergeResolvedPlaceholders();
-    await refreshFollow();
-    // A merge can change which session is current, so always re-resolve after one.
-    await rebuildCurrentSnapshot();
+    const releasedPin = await refreshFollow();
+    // A pin released by closure/archive is a follow-intent change; skip hysteresis once.
+    await rebuildCurrentSnapshot({ bypassHysteresis: releasedPin });
   }
 
   /**
@@ -668,6 +677,7 @@ export default defineApp(async (sdk) => {
     selection = normalizeSelection(await sdk.storage.global.get(SELECTION_KEY, selection));
     if (!bridgeEnabled) {
       lastProbeAt = 0;
+      bridgeClient.resetPoseRevision();
       await setBridgeStatus("disabled");
       return;
     }
@@ -682,10 +692,13 @@ export default defineApp(async (sdk) => {
       const remoteSelection = await bridgeClient.getSelection();
       await syncSelection(remoteSelection);
       await bridgeClient.publish(toPetSnapshot(snapshot, Date.now()));
-      await setBridgeStatus("connected");
-    } catch {
+      const poseState = await bridgeClient.getPoseState();
+      await setBridgeStatus("connected", { poseState });
+    } catch (error) {
       // Never log raw SDK/network errors; they may contain private host or request details.
-      await setBridgeStatus("offline");
+      lastProbeAt = 0;
+      bridgeClient.resetPoseRevision();
+      await setBridgeStatus("offline", { reason: bridgeFailureReason(error) });
     }
   }
 
@@ -713,6 +726,7 @@ export default defineApp(async (sdk) => {
     lastAppliedRequestId = requestId;
 
     const now = Date.now();
+    const wasPinned = follow.mode === "pinned";
     // Only a real, active host id can be pinned; a placeholder is not a session
     // the user can name, and an archived session is shown but not pinnable.
     if (pinnedSessionId !== null) {
@@ -725,8 +739,9 @@ export default defineApp(async (sdk) => {
       : { ...createFollow(), mode: "pinned", pinnedSessionId, updatedAt: now };
     follow = withPinnedSeed(normalizeFollow(base, now), sessionList.sessions);
     await sdk.storage.global.set(FOLLOW_KEY, followStorageValue(follow));
-    await refreshFollow();
-    await rebuildCurrentSnapshot();
+    const releasedPin = await refreshFollow();
+    const manualUnpin = wasPinned && pinnedSessionId === null;
+    await rebuildCurrentSnapshot({ bypassHysteresis: manualUnpin || releasedPin });
   }
 
   async function readFollowRequest() {
@@ -745,8 +760,8 @@ export default defineApp(async (sdk) => {
         bridgeTickPending = false;
         try {
           await syncBridge();
-        } catch {
-          await setBridgeStatus("offline").catch(() => {});
+        } catch (error) {
+          await setBridgeStatus("offline", { reason: bridgeFailureReason(error) }).catch(() => {});
         }
       } while (bridgeTickPending);
     } finally {
@@ -759,7 +774,12 @@ export default defineApp(async (sdk) => {
   if (!savedSelection || typeof savedSelection !== "object" || !savedCharacterIsKnown) {
     await sdk.storage.global.set(SELECTION_KEY, selection);
   }
-  await sdk.storage.global.set(BRIDGE_STATUS_KEY, { status: bridgeStatus, updatedAt: Date.now() });
+  await sdk.storage.global.set(BRIDGE_STATUS_KEY, {
+    status: bridgeStatus,
+    reason: bridgeReason,
+    poseState: bridgePoseState,
+    updatedAt: Date.now(),
+  });
   await sdk.storage.global.set(SESSION_LIST_KEY, sessionList);
   await sdk.storage.global.set(FOLLOW_KEY, followStorageValue(follow));
   await sdk.storage.global.set(SESSION_DIAGNOSTICS_KEY, diagnostics);

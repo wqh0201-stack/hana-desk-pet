@@ -10,6 +10,8 @@ import {
   effectiveHint,
   effectiveStatus,
   FOLLOW_NOTICE_TTL_MS,
+  FOLLOW_SWITCH_MARGIN_MS,
+  FOLLOW_ACTIVE_WINDOW_MS,
   isPinnableSessionId,
   isPinnableEntry,
   pickableSessionList,
@@ -67,12 +69,157 @@ test("tool lifecycle yields working, success/error, then idle without storing re
   assert.equal(serialized.includes("/private/session/path"), false);
 });
 
-test("the latest received activity selects the current session; titles with collisions are disambiguated", () => {
+test("a sufficiently newer idle challenger selects current; titles with collisions are disambiguated", () => {
   let state = createSnapshot();
   state = applyEvent(state, identity("session-older001"), { type: "turn_start" }, 2000);
-  state = applyEvent(state, identity("session-newer002"), { type: "tool_execution_start", toolName: "search" }, 2001);
+  state = applyEvent(state, identity("session-older001"), { type: "agent_end" }, 2001);
+  state = applyEvent(state, identity("session-newer002"), { type: "tool_execution_start", toolName: "search" }, 5001);
   assert.equal(state.current.sessionId, "session-newer002");
   assert.equal(state.current.displayTitle, "代码联调 · 码农 · newer002");
+});
+
+test("alternating activity between two idle sessions does not cause ping-pong", () => {
+  assert.equal(FOLLOW_SWITCH_MARGIN_MS, 2000);
+  assert.equal(FOLLOW_ACTIVE_WINDOW_MS, 30000);
+
+  let state = createSnapshot();
+  state = applyEvent(state, identity("session-ping-a"), { type: "agent_start" }, 100000);
+  state = applyEvent(state, identity("session-ping-a"), { type: "agent_end" }, 100001);
+  let at = 101000;
+  let priorId = state.current.sessionId;
+  let switches = 0;
+
+  for (let index = 0; index < 10; index += 1) {
+    const sessionId = index % 2 === 0 ? "session-ping-b" : "session-ping-a";
+    state = applyEvent(state, identity(sessionId), { type: "agent_start" }, at);
+    if (state.current.sessionId !== priorId) switches += 1;
+    priorId = state.current.sessionId;
+    at += 1;
+    state = applyEvent(state, identity(sessionId), { type: "agent_end" }, at);
+    if (state.current.sessionId !== priorId) switches += 1;
+    priorId = state.current.sessionId;
+    at += 100;
+  }
+
+  assert.ok(switches <= 5, `ten alternating turns switched current ${switches} times`);
+  assert.equal(state.current.sessionId, "session-ping-a");
+});
+
+test("recent work on current resists a more active session", () => {
+  let state = applyEvent(createSnapshot(), identity("session-working-a"), { type: "agent_start" }, 200000);
+  state = applyEvent(state, identity("session-working-b"), { type: "agent_start" }, 204000);
+  assert.equal(state.current.sessionId, "session-working-a",
+    "the incumbent is still working and its last activity is inside the 30-second window");
+
+  let toolState = applyEvent(createSnapshot(), identity("session-tool-a"), {
+    type: "tool_execution_start", toolName: "file.read",
+  }, 205000);
+  toolState = applyEvent(toolState, identity("session-tool-b"), { type: "agent_start" }, 209000);
+  assert.equal(toolState.current.sessionId, "session-tool-a", "an active tool is protected too");
+  assert.equal(toolState.current.toolName, "file.read");
+});
+
+test("without a follow-intent change, an idle current requires the full activity margin", () => {
+  const idleCurrent = () => {
+    let state = applyEvent(createSnapshot(), identity("session-idle-a"), { type: "agent_start" }, 300000);
+    return applyEvent(state, identity("session-idle-a"), { type: "agent_end" }, 300001);
+  };
+
+  let oneSecond = idleCurrent();
+  oneSecond = applyEvent(oneSecond, identity("session-idle-b"), { type: "agent_start" }, 301002);
+  assert.equal(oneSecond.current.sessionId, "session-idle-a", "a 1-second lead is below the 2-second margin");
+
+  let threeSeconds = idleCurrent();
+  threeSeconds = applyEvent(threeSeconds, identity("session-idle-b"), { type: "agent_start" }, 303002);
+  assert.equal(threeSeconds.current.sessionId, "session-idle-b", "a 3-second lead clears the margin");
+});
+
+test("a one-shot hysteresis bypass does not affect subsequent ordinary events", () => {
+  let state = applyEvent(createSnapshot(), identity("session-bypass-a"), { type: "agent_start" }, 1000000);
+  state = applyEvent(state, identity("session-bypass-a"), { type: "agent_end" }, 1000001);
+  const pin = { mode: "pinned", pinnedSessionId: "session-bypass-a" };
+  state = rebuildSnapshot(state, pin, 1000002);
+  state = applyEvent(state, identity("session-bypass-b"), { type: "agent_start" }, 1001002, pin);
+  state = applyEvent(state, identity("session-bypass-b"), { type: "agent_end" }, 1001003, pin);
+  assert.equal(state.current.sessionId, "session-bypass-a", "pin keeps current before the follow change");
+
+  state = rebuildSnapshot(state, createFollow(), 1001003, { bypassHysteresis: true });
+  assert.equal(state.current.sessionId, "session-bypass-b", "unpin bypasses the 2-second margin once");
+
+  state = applyEvent(state, identity("session-bypass-a"), { type: "agent_start" }, 1002004);
+  assert.equal(state.current.sessionId, "session-bypass-b",
+    "the next normal event still applies hysteresis to the 1-second challenger");
+});
+
+test("a confirming challenger takes over immediately despite active-work protection", () => {
+  let state = applyEvent(createSnapshot(), identity("session-confirm-current"), { type: "agent_start" }, 400000);
+  state = applyEvent(state, identity("session-confirm-challenger"), { type: "agent_start" }, 400100);
+  assert.equal(state.current.sessionId, "session-confirm-current", "active work initially keeps current");
+  state = applyEvent(state, identity("session-confirm-challenger"), { type: "session_confirmation" }, 400101);
+  assert.equal(state.current.sessionId, "session-confirm-challenger");
+  assert.equal(state.current.hint, "confirming");
+});
+
+test("a current session awaiting confirmation cannot be preempted", () => {
+  let state = applyEvent(createSnapshot(), identity("session-confirm-current"), { type: "agent_start" }, 500000);
+  state = applyEvent(state, identity("session-confirm-current"), { type: "session_confirmation" }, 500001);
+  state = applyEvent(state, identity("session-confirm-challenger"), { type: "agent_start" }, 510002);
+  assert.equal(state.current.sessionId, "session-confirm-current");
+  assert.equal(state.current.hint, "confirming");
+
+  state = rebuildSnapshot(state, createFollow(), 510003, { bypassHysteresis: true });
+  assert.equal(state.current.sessionId, "session-confirm-current",
+    "a follow-intent bypass does not hide an outstanding current confirmation");
+});
+
+test("a pin prevents every event from switching current", () => {
+  let state = applyEvent(createSnapshot(), identity("session-pinned-a"), { type: "agent_start" }, 600000);
+  state = applyEvent(state, identity("session-pinned-a"), { type: "agent_end" }, 600001);
+  state = applyEvent(state, identity("session-pinned-b"), { type: "agent_start" }, 603002);
+  state = applyEvent(state, identity("session-pinned-b"), { type: "agent_end" }, 603003);
+
+  const follow = { mode: "pinned", pinnedSessionId: "session-pinned-a" };
+  state = rebuildSnapshot(state, follow, 603004);
+  assert.equal(state.current.sessionId, follow.pinnedSessionId);
+  let previousId = state.current.sessionId;
+  let switches = 0;
+  let at = 604000;
+  for (let index = 0; index < 10; index += 1) {
+    const sessionId = index % 2 === 0 ? "session-pinned-b" : "session-pinned-a";
+    state = applyEvent(state, identity(sessionId), { type: "agent_start" }, at, follow);
+    if (state.current.sessionId !== previousId) switches += 1;
+    previousId = state.current.sessionId;
+    at += 1;
+    state = applyEvent(state, identity(sessionId), { type: "agent_end" }, at, follow);
+    if (state.current.sessionId !== previousId) switches += 1;
+    previousId = state.current.sessionId;
+    at += 100;
+  }
+  assert.equal(switches, 0);
+});
+
+test("a pin missing past its grace period releases to the latest session", () => {
+  let state = applyEvent(createSnapshot(), identity("session-fallback-a"), { type: "agent_start" }, 700000);
+  state = applyEvent(state, identity("session-fallback-a"), { type: "agent_end" }, 700001);
+  state = applyEvent(state, identity("session-fallback-b"), { type: "agent_start" }, 703002);
+  state = applyEvent(state, identity("session-fallback-b"), { type: "agent_end" }, 703003);
+  assert.equal(state.current.sessionId, "session-fallback-b");
+
+  const missing = resolveFollow({ mode: "pinned", pinnedSessionId: "session-missing-pin" }, {
+    sessions: state.sessions, listEntries: [], listAvailable: true, now: 704000,
+  });
+  assert.equal(missing.follow.mode, "pinned");
+  let held = rebuildSnapshot(state, missing.follow, 704000);
+  assert.equal(held.current.sessionId, "session-fallback-b", "an absent pin does not blank current during grace");
+
+  const expired = resolveFollow(missing.follow, {
+    sessions: held.sessions, listEntries: [], listAvailable: true,
+    now: 704000 + PIN_MISSING_GRACE_MS,
+  });
+  assert.equal(expired.follow.mode, "latest");
+  assert.equal(expired.follow.released.reason, "pinned_missing");
+  held = rebuildSnapshot(held, expired.follow, 704000 + PIN_MISSING_GRACE_MS);
+  assert.equal(held.current.sessionId, "session-fallback-b", "the released pin falls back to latest activity");
 });
 
 test("empty titles fall back to a stable session-id suffix", () => {
@@ -304,25 +451,26 @@ test("the session-list projection drops paths, bodies, models and counters", () 
 test("a pin wins over newer activity and unpinning restores the latest", () => {
   let state = createSnapshot();
   state = applyEvent(state, { sessionId: "session-older0001", title: "旧" }, { type: "turn_start" }, 20000);
-  state = applyEvent(state, { sessionId: "session-newer0002", title: "新" }, { type: "turn_start" }, 20001);
+  state = applyEvent(state, { sessionId: "session-older0001" }, { type: "agent_end" }, 20001);
+  state = applyEvent(state, { sessionId: "session-newer0002", title: "新" }, { type: "turn_start" }, 23002);
   assert.equal(state.current.sessionId, "session-newer0002");
 
   const pin = { mode: "pinned", pinnedSessionId: "session-older0001" };
-  let decision = resolveFollow(pin, { sessions: state.sessions, listEntries: [], listAvailable: true, now: 20002 });
+  let decision = resolveFollow(pin, { sessions: state.sessions, listEntries: [], listAvailable: true, now: 23003 });
   assert.equal(decision.view.mode, "pinned");
   assert.equal(decision.view.sessionId, "session-older0001");
   assert.equal(decision.follow.reason, "pinned");
 
-  const pinned = rebuildSnapshot(state, decision.follow, 20002);
+  const pinned = rebuildSnapshot(state, decision.follow, 23003);
   assert.equal(pinned.current.sessionId, "session-older0001", "the pin leads even though it is older");
   assert.equal(pinned.current.displayTitle, "旧");
 
   // A new event on a different session still cannot steal the pin.
-  const withEvent = applyEvent(pinned, { sessionId: "session-third0003", title: "第三" }, { type: "turn_start" }, 20003, decision.follow);
+  const withEvent = applyEvent(pinned, { sessionId: "session-third0003", title: "第三" }, { type: "turn_start" }, 23004, decision.follow);
   assert.equal(withEvent.current.sessionId, "session-older0001", "the pin is sticky across events");
 
-  const unpin = normalizeFollow({ ...createFollow(), updatedAt: 20004 }, 20004);
-  const back = rebuildSnapshot(withEvent, unpin, 20004);
+  const unpin = normalizeFollow({ ...createFollow(), updatedAt: 23005 }, 23005);
+  const back = rebuildSnapshot(withEvent, unpin, 23005);
   assert.equal(back.current.sessionId, "session-third0003", "unpinned follows the newest activity");
 });
 

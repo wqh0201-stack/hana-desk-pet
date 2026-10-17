@@ -56,6 +56,8 @@ export const SESSION_ACTIVE_MAX = 128;
 export const SESSION_ARCHIVED_MAX = 96;
 /** How long a pinned session may be absent from the session list before the pin is released. */
 export const PIN_MISSING_GRACE_MS = 15000;
+export const FOLLOW_SWITCH_MARGIN_MS = 2000;
+export const FOLLOW_ACTIVE_WINDOW_MS = 30000;
 export const FOLLOW_NOTICE_TTL_MS = 600000;
 export const SESSION_ENTRY_KEYS = Object.freeze([
   "sessionId", "title", "agentId", "agentName", "lifecycle", "displayTitle",
@@ -238,6 +240,45 @@ function attachTitles(records) {
   return records.map((record) => ({ ...record, displayTitle: displayTitleFor(record, records) }));
 }
 
+/** Keep the current target stable without delaying important confirmation handoffs. */
+function selectCurrent(previous, ordered, candidate, observedAt, { bypassHysteresis = false } = {}) {
+  const previousId = cleanId(previous?.current?.sessionId);
+  const incumbent = previousId
+    ? ordered.find((item) => item.sessionId === previousId) ?? null
+    : null;
+  if (!incumbent || incumbent.unresolved === true) return candidate ?? null;
+
+  // A confirmation already visible on the current session must not be hidden.
+  if (effectiveHint(incumbent, observedAt) === "confirming") return incumbent;
+
+  // A confirmation on another session is urgent and bypasses both work protection
+  // and the ordinary activity margin. Prefer the newest outstanding confirmation.
+  const confirming = ordered
+    .filter((item) => item.sessionId !== incumbent.sessionId && item.unresolved !== true &&
+      item.closedAt <= 0 && effectiveHint(item, observedAt) === "confirming")
+    .sort((a, b) => b.hintAt - a.hintAt || activityOrder(a, b))[0] ?? null;
+  if (confirming) return confirming;
+
+  // A follow-intent change (manual unpin or automatic release) should follow the
+  // latest candidate immediately; only the confirmation rules above remain sticky.
+  if (bypassHysteresis) return candidate ?? null;
+
+  // A closed current is no longer a live incumbent. Follow the best remaining
+  // candidate (or latest closed fallback) instead of applying hysteresis to it.
+  if (incumbent.closedAt > 0 && candidate && candidate.sessionId !== incumbent.sessionId) return candidate;
+
+  if (candidate?.sessionId === incumbent.sessionId) return incumbent;
+  if (!candidate) return null;
+
+  const age = observedAt - incumbent.lastActivityAt;
+  const working = effectiveStatus(incumbent, observedAt) === "working";
+  if (working && age >= 0 && age <= FOLLOW_ACTIVE_WINDOW_MS) return incumbent;
+
+  return candidate.lastActivityAt >= incumbent.lastActivityAt + FOLLOW_SWITCH_MARGIN_MS
+    ? candidate
+    : incumbent;
+}
+
 /** Metadata-only seed so a pinned session with no activity yet still gets a row. */
 function seedSession(entry) {
   if (!entry || typeof entry !== "object") return null;
@@ -259,7 +300,7 @@ function seedSession(entry) {
   };
 }
 
-function buildSnapshot(previous, sessions, observedAt, follow = {}) {
+function buildSnapshot(previous, sessions, observedAt, follow = {}, { bypassHysteresis = false } = {}) {
   const ordered = sessions.map(cleanSession).filter(Boolean).sort(activityOrder);
   const pinnedSessionId = follow.pinnedSessionId ? cleanId(follow.pinnedSessionId) : null;
   const known = pinnedSessionId
@@ -271,9 +312,12 @@ function buildSnapshot(previous, sessions, observedAt, follow = {}) {
     ? [...ordered.filter((item) => item.sessionId !== pinned.sessionId).slice(0, MAX_SESSIONS - 1), pinned]
     : ordered.slice(0, MAX_SESSIONS);
   // A pinned session stays current even when another session was active more recently.
+  // Without a pin, keep the previous current as incumbent: active work and the
+  // activity margin prevent alternating sessions from making the pet ping-pong.
   // A placeholder never becomes the target: it is not the user's real session.
   const candidate = pinned ?? latestActive(ordered);
-  const target = candidate && candidate.unresolved !== true ? candidate : null;
+  const selected = pinned ? candidate : selectCurrent(previous, ordered, candidate, observedAt, { bypassHysteresis });
+  const target = selected && selected.unresolved !== true ? selected : null;
   return {
     schemaVersion: 1,
     observedAt,
@@ -284,9 +328,9 @@ function buildSnapshot(previous, sessions, observedAt, follow = {}) {
 }
 
 /** Re-derive `current` after a follow change, without any bus event. */
-export function rebuildSnapshot(snapshot, follow = {}, observedAt = Date.now()) {
+export function rebuildSnapshot(snapshot, follow = {}, observedAt = Date.now(), { bypassHysteresis = false } = {}) {
   if (!snapshot || typeof snapshot !== "object" || !Array.isArray(snapshot.sessions)) return snapshot;
-  return buildSnapshot(snapshot, snapshot.sessions, observedAt, follow);
+  return buildSnapshot(snapshot, snapshot.sessions, observedAt, follow, { bypassHysteresis });
 }
 
 /**

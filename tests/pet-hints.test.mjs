@@ -140,7 +140,12 @@ test("a confirmation raises `confirming` on the followed session only", async ()
   assert.equal(currentHint(harness), "confirming");
   assert.equal(harness.read(SNAPSHOT_KEY).current.sessionId, SEEN, "the pin still owns the pet");
 
-  // With no pin the newest activity leads, and THAT session's hint is what shows.
+  // Clear the current session's own confirmation before unpinning. While it is
+  // confirming it must not be preempted, even by another confirming session.
+  await emit(harness, { type: "confirmation_resolved", sessionId: SEEN, ...sensitivePayload() }, SEEN_PATH);
+  assert.equal(hintOf(harness, SEEN), null);
+
+  // With no pin the confirming challenger takes over immediately.
   await pin(harness, null);
   assert.equal(harness.read(SNAPSHOT_KEY).current.sessionId, OTHER);
   assert.equal(currentHint(harness), "confirming", "the followed session decides the hint");
