@@ -61,6 +61,7 @@ final class PetWindowView: NSView, NSMenuDelegate {
             pointerGesture.cancel()
             dragStartWindowOrigin = nil
             eventPolicy.reset()
+            artwork.endDragPickUp()
         }
         guard let window else {
             attachedWindow?.ignoresMouseEvents = false
@@ -68,6 +69,7 @@ final class PetWindowView: NSView, NSMenuDelegate {
             pointerGesture.cancel()
             dragStartWindowOrigin = nil
             eventPolicy.reset()
+            artwork.endDragPickUp()
             return
         }
         attachedWindow = window
@@ -123,13 +125,20 @@ final class PetWindowView: NSView, NSMenuDelegate {
         guard let screenPoint = screenPoint(for: event) else { return }
         let point = PetPointerPoint(x: screenPoint.x, y: screenPoint.y)
         guard let translation = pointerGesture.drag(to: point),
-              !model.positionLocked,
               let dragStartWindowOrigin,
               let window else { return }
+        // Only a drag that really crosses the threshold with an unlocked position enters the
+        // pick-up loop, and only along with the window move it is describing.
+        guard PetPickUpAnimation.shouldBeginDrag(
+            translation: translation,
+            positionLocked: model.positionLocked
+        ) else { return }
         window.setFrameOrigin(NSPoint(
             x: dragStartWindowOrigin.x + translation.x,
             y: dragStartWindowOrigin.y + translation.y
         ))
+        // Idempotent, so a stream of mouseDragged events cannot restart the rhythm.
+        artwork.beginDragPickUp()
     }
 
     override func mouseUp(with event: NSEvent) {
@@ -138,6 +147,7 @@ final class PetWindowView: NSView, NSMenuDelegate {
             eventPolicy.endPointerSequence()
             synchronizeMouseAvoidance()
         }
+        artwork.endDragPickUp()
         guard let screenPoint = screenPoint(for: event) else {
             pointerGesture.cancel()
             return
@@ -153,6 +163,7 @@ final class PetWindowView: NSView, NSMenuDelegate {
         pointerGesture.cancel()
         dragStartWindowOrigin = nil
         eventPolicy.cancelPointerSequence()
+        artwork.endDragPickUp()
         synchronizeMouseAvoidance()
     }
 
@@ -221,12 +232,17 @@ final class PetWindowView: NSView, NSMenuDelegate {
         let pointInWindow = window.convertPoint(fromScreen: NSEvent.mouseLocation)
         let pointInView = convert(pointInWindow, from: nil)
         let pointInArtwork = artwork.convert(pointInView, from: self)
-        let pointerIsOnCharacter = artwork.hitShapeContains(pointInArtwork)
-        window.ignoresMouseEvents = eventPolicy.ignoresMouseEvents(pointerIsOnCharacter: pointerIsOnCharacter)
+        // During the pick-up loop the character is being dragged, so a transient pose frame
+        // with transparent pixels under the cursor must not hand the window back.
+        window.ignoresMouseEvents = eventPolicy.ignoresMouseEvents(
+            pointerIsOnCharacter: artwork.hitShapeContains(pointInArtwork),
+            duringPickUp: artwork.isDragPickUpActive
+        )
     }
 
     func menuWillOpen(_ menu: NSMenu) {
         eventPolicy.menuDidOpen()
+        artwork.endDragPickUp()
         synchronizeMouseAvoidance()
     }
 
@@ -285,6 +301,7 @@ private final class PetCharacterView: NSView {
     private var timeline = PetPoseTimeline()
     private var moodTracker = PetPoseMoodTracker()
     private var workScheduler = PetWorkPoseScheduler()
+    private var pickUp = PetPickUpAnimation()
     private var currentSessionId: String?
     private var currentHint: PetActivityHint?
     private var currentToolName: String?
@@ -387,7 +404,9 @@ private final class PetCharacterView: NSView {
         guard motionIsActive != shouldAnimate else { return }
         motionIsActive = shouldAnimate
         // Becoming invisible stops every autonomous deadline; becoming visible rebuilds the
-        // rhythm from the current real state instead of replaying the hidden span.
+        // rhythm from the current real state instead of replaying the hidden span. A hidden
+        // window also cannot still be dragging, so the pick-up loop is dropped.
+        if !shouldAnimate { pickUp.end() }
         applyLatestState(at: ProcessInfo.processInfo.systemUptime)
         if !motionIsActive { cancelWakeTimer() }
     }
@@ -427,9 +446,12 @@ private final class PetCharacterView: NSView {
             workScheduler = PetWorkPoseScheduler()
             moodTracker = PetPoseMoodTracker()
             _ = timeline.interruptReaction(at: ProcessInfo.processInfo.systemUptime)
+            pickUp.end()
         } else if roleChanged {
             // Changing outfit inside one session keeps the continuous work history; only the
-            // display phases are rebuilt for the new artwork.
+            // display phases are rebuilt for the new artwork. The pick-up frames belong to the
+            // old character, so the interaction state is dropped rather than carried over.
+            pickUp.end()
             workScheduler.rebuildRhythm(workPoses: workPoses, at: ProcessInfo.processInfo.systemUptime)
         }
         setAccessibilityLabel("\(roleName)桌宠")
@@ -448,6 +470,27 @@ private final class PetCharacterView: NSView {
         displayedLayers = timeline.interruptTransition(at: now)
         needsDisplay = true
         scheduleWake(at: now)
+    }
+
+    var isDragPickUpActive: Bool { pickUp.isActive }
+
+    /// Enters the two-frame pick-up loop. Idempotent: the caller can invoke this on every
+    /// `mouseDragged` event without restarting the rhythm. It never touches the activity
+    /// state, `lastActivityAt` or the mood tracker's continuous-work clock.
+    func beginDragPickUp() {
+        guard !pickUp.isActive else { return }
+        let now = ProcessInfo.processInfo.systemUptime
+        pickUp.begin(at: now)
+        applyLatestState(at: now)
+    }
+
+    /// Leaves the pick-up loop and immediately renders the latest real state. No pre-drag
+    /// snapshot is restored, so the artwork cannot come back stale.
+    func endDragPickUp() {
+        guard pickUp.isActive else { return }
+        pickUp.end()
+        let now = ProcessInfo.processInfo.systemUptime
+        applyLatestState(at: now)
     }
 
     func reactToTap() {
@@ -508,16 +551,41 @@ private final class PetCharacterView: NSView {
         // actually came out of the planner/mood chain may carry the fallback flag.
         let reportedFallback = fallback && basePose == realPose
 
+        // The pick-up loop covers idle, work, mood and the real-feedback poses (a pending hint,
+        // an error) while the drag lasts: the user is directly holding the character, so the
+        // drag wins. It is a pure display overlay — it does not write `lastActivityAt`, the work
+        // clock, the mood tracker or any follow timing, so the underlying session keeps being
+        // observed and everything real renders again on release.
+        let pickUpPose = pickUp.poseName(
+            at: time,
+            availablePoseNames: availablePoseNames,
+            reduceMotion: reduceMotion
+        )
+        // `displayPose` is the same decision the checks assert: while the loop runs it owns
+        // the artwork, otherwise the real pose shows.
+        let displayedPose = pickUp.displayPose(
+            realPose: basePose,
+            at: time,
+            availablePoseNames: availablePoseNames,
+            reduceMotion: reduceMotion
+        )
+        let pickUpOwnsArtwork = pickUp.isActive && pickUpPose != nil
+
         displayedLayers = timeline.update(
             status: status,
-            basePose: basePose,
+            basePose: displayedPose,
             availablePoseNames: availablePoseNames,
             reduceMotion: reduceMotion,
-            allowsIdleAnimation: mood != .sleeping && activeHint == nil,
+            allowsIdleAnimation: mood != .sleeping && activeHint == nil && !pickUpOwnsArtwork,
             hint: activeHint,
+            // Frame-by-frame poses cut hard: a 0.20 s cross-fade on a 0.16 s frame would
+            // overlap two poses' arms.
+            immediate: pickUpOwnsArtwork,
             at: time
         )
-        poseReadback.update(characterId: roleId, pose: basePose, fallback: reportedFallback)
+        // Readback stays honest: `picked-up`/`picked-up-2` are catalogued poses that really
+        // are on screen, and they are not a missing-artwork substitution.
+        poseReadback.update(characterId: roleId, pose: displayedPose, fallback: !pickUpOwnsArtwork && reportedFallback)
         needsDisplay = true
         scheduleWake(at: time)
     }
@@ -551,6 +619,7 @@ private final class PetCharacterView: NSView {
             timeline.nextWakeAt(after: time),
             moodTracker.nextDeadline(after: time),
             workScheduler.nextDeadline(after: time),
+            pickUp.nextDeadline(after: time, reduceMotion: reduceMotion),
         ]
             .compactMap { $0 }
             .min()

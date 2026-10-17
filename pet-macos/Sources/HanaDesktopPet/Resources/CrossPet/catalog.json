@@ -15,7 +15,7 @@
   "assetHandling": {
     "downloadedFrom": "https://raw.githubusercontent.com/lokicorvus/crosspet/18e924659c665eb6fcfcf5e161a81a75203af0ae/characters/",
     "format": "The 193 upstream WebP files are unchanged byte-for-byte; four locally AI-generated supplements are identified per character and are not upstream files.",
-    "generatedAssetPolicy": "claude/drawing.webp, gemini/idle-blink.webp, deepseek-hoodie/idle-2.webp, and deepseek-hoodie/idle-3.webp are local AI-generated supplements, not CrossPet originals or works attributable to an upstream artist; they are used under the same CC BY-NC-SA 4.0 terms.",
+    "generatedAssetPolicy": "claude/drawing.webp, gemini/idle-blink.webp, deepseek-hoodie/idle-2.webp, deepseek-hoodie/idle-3.webp and the 14 picked-up/picked-up-2 frames are local AI-generated supplements, not CrossPet originals or works attributable to an upstream artist; they are used under the same CC BY-NC-SA 4.0 terms.",
     "excluded": [
       "Upstream character.json files (including lines and app bindings)",
       "Generation prompts, source code, integrations, Easter-egg characters, greetings, and seasonal poses",
@@ -23,7 +23,22 @@
     ],
     "runtimeIntegration": true,
     "publicationAllowed": true,
-    "commercialUseAllowed": false
+    "commercialUseAllowed": false,
+    "pickedUpFrames": {
+      "addedIn": "pet 0.5.7",
+      "note": "14 locally generated two-frame pick-up loop assets (7 characters x 2 frames). Only the image bytes were copied into this repository so the app stays self-contained at runtime; no media-library absolute path is read.",
+      "newPack": "桌宠-GPT后颈扑腾头尾帧-20261017: frames/<role>/first-frame.webp -> picked-up.webp, frames/<role>/last-frame.webp -> picked-up-2.webp",
+      "oldPack": "桌宠-拎起两帧-20261017: frames/gpt-onesie/picked-up.webp -> picked-up.webp, frames/gpt-onesie/picked-up-2.webp -> picked-up-2.webp (the user's final choice for gpt-onesie, which overrides the newer waving pack for that skin)",
+      "roles": [
+        "claude",
+        "gpt",
+        "deepseek",
+        "gemini",
+        "glm",
+        "deepseek-hoodie",
+        "gpt-onesie"
+      ]
+    }
   },
   "characters": [
     {
@@ -34,9 +49,41 @@
       "assetDirectory": "claude",
       "designCredit": "CrossPet's AI-generated rendition of the community-popular Claude-girl design (copper/orange hair, orange-flower ornament, book). Upstream does not identify an individual illustrator or the original design author; its license lists ai-school-op and openpet-ai-girls as references, not as a verified direct source for this exact image.",
       "poseFiles": [
-        "asking.webp", "busy_left.webp", "busy_right.webp", "clawd.webp", "compact.webp", "delegating.webp", "drawing.webp", "happy-2.webp", "idle-2.webp", "idle-3.webp", "idle-blink.webp", "idle.webp", "listening.webp", "oops.webp", "proud.webp", "reading-2.webp", "running.webp", "searching.webp", "sleeping-2.webp", "sorry.webp", "surprised.webp", "swamped_left.webp", "swamped_right.webp", "thinking-2.webp", "thinking.webp", "tired.webp", "writing.webp"
+        "asking.webp",
+        "busy_left.webp",
+        "busy_right.webp",
+        "clawd.webp",
+        "compact.webp",
+        "delegating.webp",
+        "drawing.webp",
+        "happy-2.webp",
+        "idle-2.webp",
+        "idle-3.webp",
+        "idle-blink.webp",
+        "idle.webp",
+        "listening.webp",
+        "oops.webp",
+        "picked-up-2.webp",
+        "picked-up.webp",
+        "proud.webp",
+        "reading-2.webp",
+        "running.webp",
+        "searching.webp",
+        "sleeping-2.webp",
+        "sorry.webp",
+        "surprised.webp",
+        "swamped_left.webp",
+        "swamped_right.webp",
+        "thinking-2.webp",
+        "thinking.webp",
+        "tired.webp",
+        "writing.webp"
       ],
-      "generatedPoses": ["drawing.webp"]
+      "generatedPoses": [
+        "drawing.webp",
+        "picked-up-2.webp",
+        "picked-up.webp"
+      ]
     },
     {
       "id": "gpt",
@@ -46,7 +93,42 @@
       "assetDirectory": "gpt",
       "designCredit": "CrossPet's AI-generated rendition of the community design '御姐白龙', credited upstream to ZipZipPipe on Bilibili; the individual source post URL is not listed in the license.",
       "poseFiles": [
-        "asking.webp", "busy_left.webp", "busy_right.webp", "compact.webp", "delegating.webp", "drawing.webp", "happy.webp", "idle-2.webp", "idle-3.webp", "idle-blink.webp", "idle.webp", "listening.webp", "oops.webp", "proud.webp", "reading.webp", "reset.webp", "reset_bell.webp", "reset_check.webp", "reset_hope.webp", "reset_maybe.webp", "reset_nope.webp", "running.webp", "searching.webp", "sleeping.webp", "surprised.webp", "swamped_left.webp", "swamped_right.webp", "thinking.webp", "tired.webp", "writing.webp"
+        "asking.webp",
+        "busy_left.webp",
+        "busy_right.webp",
+        "compact.webp",
+        "delegating.webp",
+        "drawing.webp",
+        "happy.webp",
+        "idle-2.webp",
+        "idle-3.webp",
+        "idle-blink.webp",
+        "idle.webp",
+        "listening.webp",
+        "oops.webp",
+        "picked-up-2.webp",
+        "picked-up.webp",
+        "proud.webp",
+        "reading.webp",
+        "reset.webp",
+        "reset_bell.webp",
+        "reset_check.webp",
+        "reset_hope.webp",
+        "reset_maybe.webp",
+        "reset_nope.webp",
+        "running.webp",
+        "searching.webp",
+        "sleeping.webp",
+        "surprised.webp",
+        "swamped_left.webp",
+        "swamped_right.webp",
+        "thinking.webp",
+        "tired.webp",
+        "writing.webp"
+      ],
+      "generatedPoses": [
+        "picked-up-2.webp",
+        "picked-up.webp"
       ]
     },
     {
@@ -57,7 +139,41 @@
       "assetDirectory": "deepseek",
       "designCredit": "CrossPet's AI-generated rendition. Upstream credits the '溟月' prototype to 上善无形 (2025-06, CC BY-NC-SA 4.0) and the deep-blue maid whale-girl / '大肥鱼' design to ZipZipPipe on Bilibili; no exact source post URL is listed.",
       "poseFiles": [
-        "asking.webp", "busy_left.webp", "busy_right.webp", "compact.webp", "deepthink.webp", "delegating.webp", "drawing.webp", "eat.webp", "feast.webp", "happy.webp", "idle-2.webp", "idle-3.webp", "idle-blink.webp", "idle.webp", "listening.webp", "oops.webp", "proud.webp", "reading.webp", "running.webp", "searching.webp", "slack.webp", "sleeping.webp", "surprised.webp", "swamped_left.webp", "swamped_right.webp", "swim.webp", "thinking.webp", "tired.webp", "writing.webp"
+        "asking.webp",
+        "busy_left.webp",
+        "busy_right.webp",
+        "compact.webp",
+        "deepthink.webp",
+        "delegating.webp",
+        "drawing.webp",
+        "eat.webp",
+        "feast.webp",
+        "happy.webp",
+        "idle-2.webp",
+        "idle-3.webp",
+        "idle-blink.webp",
+        "idle.webp",
+        "listening.webp",
+        "oops.webp",
+        "picked-up-2.webp",
+        "picked-up.webp",
+        "proud.webp",
+        "reading.webp",
+        "running.webp",
+        "searching.webp",
+        "slack.webp",
+        "sleeping.webp",
+        "surprised.webp",
+        "swamped_left.webp",
+        "swamped_right.webp",
+        "swim.webp",
+        "thinking.webp",
+        "tired.webp",
+        "writing.webp"
+      ],
+      "generatedPoses": [
+        "picked-up-2.webp",
+        "picked-up.webp"
       ]
     },
     {
@@ -68,9 +184,39 @@
       "assetDirectory": "gemini",
       "designCredit": "CrossPet's AI-generated rendition of a community-popular Gemini-girl design (cat ears, heterochromia, four-point-star ornament). Upstream does not name an individual original author or illustrator; ai-school-op and openpet-ai-girls are listed as references, not as verified direct sources for this exact image.",
       "poseFiles": [
-        "asking.webp", "busy_left.webp", "busy_right.webp", "compact.webp", "delegating.webp", "drawing.webp", "float.webp", "happy.webp", "idle-2.webp", "idle-3.webp", "idle-blink.webp", "idle.webp", "listening.webp", "oops.webp", "proud.webp", "reading.webp", "running.webp", "searching.webp", "sleeping.webp", "surprised.webp", "swamped_left.webp", "swamped_right.webp", "thinking.webp", "tired.webp", "writing.webp"
+        "asking.webp",
+        "busy_left.webp",
+        "busy_right.webp",
+        "compact.webp",
+        "delegating.webp",
+        "drawing.webp",
+        "float.webp",
+        "happy.webp",
+        "idle-2.webp",
+        "idle-3.webp",
+        "idle-blink.webp",
+        "idle.webp",
+        "listening.webp",
+        "oops.webp",
+        "picked-up-2.webp",
+        "picked-up.webp",
+        "proud.webp",
+        "reading.webp",
+        "running.webp",
+        "searching.webp",
+        "sleeping.webp",
+        "surprised.webp",
+        "swamped_left.webp",
+        "swamped_right.webp",
+        "thinking.webp",
+        "tired.webp",
+        "writing.webp"
       ],
-      "generatedPoses": ["idle-blink.webp"]
+      "generatedPoses": [
+        "idle-blink.webp",
+        "picked-up-2.webp",
+        "picked-up.webp"
+      ]
     },
     {
       "id": "glm",
@@ -80,7 +226,39 @@
       "assetDirectory": "glm",
       "designCredit": "CrossPet original character design ('心机涨价狐'); the upstream README describes the setting as CrossPet-original and does not identify a separate individual illustrator. Artwork is described upstream as AI-generated.",
       "poseFiles": [
-        "asking.webp", "busy_left.webp", "busy_right.webp", "compact.webp", "delegating.webp", "drawing.webp", "happy.webp", "idle-2.webp", "idle-3.webp", "idle-blink.webp", "idle.webp", "listening.webp", "masked.webp", "oops.webp", "pricetag.webp", "proud.webp", "reading.webp", "running.webp", "searching.webp", "sleeping.webp", "soldout.webp", "surprised.webp", "swamped_left.webp", "swamped_right.webp", "thinking.webp", "tired.webp", "writing.webp"
+        "asking.webp",
+        "busy_left.webp",
+        "busy_right.webp",
+        "compact.webp",
+        "delegating.webp",
+        "drawing.webp",
+        "happy.webp",
+        "idle-2.webp",
+        "idle-3.webp",
+        "idle-blink.webp",
+        "idle.webp",
+        "listening.webp",
+        "masked.webp",
+        "oops.webp",
+        "picked-up-2.webp",
+        "picked-up.webp",
+        "pricetag.webp",
+        "proud.webp",
+        "reading.webp",
+        "running.webp",
+        "searching.webp",
+        "sleeping.webp",
+        "soldout.webp",
+        "surprised.webp",
+        "swamped_left.webp",
+        "swamped_right.webp",
+        "thinking.webp",
+        "tired.webp",
+        "writing.webp"
+      ],
+      "generatedPoses": [
+        "picked-up-2.webp",
+        "picked-up.webp"
       ]
     },
     {
@@ -92,9 +270,44 @@
       "assetDirectory": "deepseek-hoodie",
       "designCredit": "CrossPet-created derivative outfit based on the DeepSeek / 大肥鱼 character, credited as such in the upstream README and covered by the same CC BY-NC-SA 4.0 character license.",
       "poseFiles": [
-        "asking.webp", "busy_left.webp", "busy_right.webp", "compact.webp", "deepthink.webp", "delegating.webp", "drawing.webp", "eat.webp", "feast.webp", "happy.webp", "idle-2.webp", "idle-3.webp", "idle-blink.webp", "idle.webp", "listening.webp", "oops.webp", "proud.webp", "reading.webp", "running.webp", "searching.webp", "slack.webp", "sleeping.webp", "surprised.webp", "swamped_left.webp", "swamped_right.webp", "swim.webp", "thinking.webp", "tired.webp", "writing.webp"
+        "asking.webp",
+        "busy_left.webp",
+        "busy_right.webp",
+        "compact.webp",
+        "deepthink.webp",
+        "delegating.webp",
+        "drawing.webp",
+        "eat.webp",
+        "feast.webp",
+        "happy.webp",
+        "idle-2.webp",
+        "idle-3.webp",
+        "idle-blink.webp",
+        "idle.webp",
+        "listening.webp",
+        "oops.webp",
+        "picked-up-2.webp",
+        "picked-up.webp",
+        "proud.webp",
+        "reading.webp",
+        "running.webp",
+        "searching.webp",
+        "slack.webp",
+        "sleeping.webp",
+        "surprised.webp",
+        "swamped_left.webp",
+        "swamped_right.webp",
+        "swim.webp",
+        "thinking.webp",
+        "tired.webp",
+        "writing.webp"
       ],
-      "generatedPoses": ["idle-2.webp", "idle-3.webp"]
+      "generatedPoses": [
+        "idle-2.webp",
+        "idle-3.webp",
+        "picked-up-2.webp",
+        "picked-up.webp"
+      ]
     },
     {
       "id": "gpt-onesie",
@@ -105,7 +318,42 @@
       "assetDirectory": "gpt-onesie",
       "designCredit": "CrossPet-created derivative outfit based on the GPT white-dragon character; the underlying '御姐白龙' design is credited upstream to ZipZipPipe on Bilibili. Both outfit and base art are covered by the character CC BY-NC-SA 4.0 license.",
       "poseFiles": [
-        "asking.webp", "busy_left.webp", "busy_right.webp", "compact.webp", "delegating.webp", "drawing.webp", "happy.webp", "idle-2.webp", "idle-3.webp", "idle-blink.webp", "idle.webp", "listening.webp", "oops.webp", "proud.webp", "reading.webp", "reset.webp", "reset_bell.webp", "reset_check.webp", "reset_hope.webp", "reset_maybe.webp", "reset_nope.webp", "running.webp", "searching.webp", "sleeping.webp", "surprised.webp", "swamped_left.webp", "swamped_right.webp", "thinking.webp", "tired.webp", "writing.webp"
+        "asking.webp",
+        "busy_left.webp",
+        "busy_right.webp",
+        "compact.webp",
+        "delegating.webp",
+        "drawing.webp",
+        "happy.webp",
+        "idle-2.webp",
+        "idle-3.webp",
+        "idle-blink.webp",
+        "idle.webp",
+        "listening.webp",
+        "oops.webp",
+        "picked-up-2.webp",
+        "picked-up.webp",
+        "proud.webp",
+        "reading.webp",
+        "reset.webp",
+        "reset_bell.webp",
+        "reset_check.webp",
+        "reset_hope.webp",
+        "reset_maybe.webp",
+        "reset_nope.webp",
+        "running.webp",
+        "searching.webp",
+        "sleeping.webp",
+        "surprised.webp",
+        "swamped_left.webp",
+        "swamped_right.webp",
+        "thinking.webp",
+        "tired.webp",
+        "writing.webp"
+      ],
+      "generatedPoses": [
+        "picked-up-2.webp",
+        "picked-up.webp"
       ]
     }
   ]

@@ -97,8 +97,23 @@ swiftc -parse-as-library -module-cache-path "$MODULE_CACHE" -o "$CHECK_DIR/PoseT
   "$CORE_DIR/PetPosePlanner.swift" \
   "$CORE_DIR/PetPoseMood.swift" \
   "$CORE_DIR/PetWorkPoseScheduler.swift" \
+  "$CORE_DIR/PetPickUpAnimation.swift" \
   tests/pose-timeline-checks.swift
 "$CHECK_DIR/PoseTimelineChecks"
+
+echo "== Pose drag pick-up checks (D) =="
+swiftc -parse-as-library -module-cache-path "$MODULE_CACHE" -o "$CHECK_DIR/PoseDragPickUpChecks" \
+  "$CORE_DIR/PetState.swift" \
+  "$CORE_DIR/PetPointerGesture.swift" \
+  "$CORE_DIR/PetWindowInteraction.swift" \
+  "$CORE_DIR/PetPoseTimeline.swift" \
+  "$CORE_DIR/PetArtworkCatalog.swift" \
+  "$CORE_DIR/PetPosePlanner.swift" \
+  "$CORE_DIR/PetPoseMood.swift" \
+  "$CORE_DIR/PetWorkPoseScheduler.swift" \
+  "$CORE_DIR/PetPickUpAnimation.swift" \
+  tests/pose-drag-pickup-checks.swift
+"$CHECK_DIR/PoseDragPickUpChecks" "$ASSETS"
 
 echo "== Cross-layer lifecycle checks (JS projection -> native v2 -> planner -> timeline) =="
 swiftc -parse-as-library -module-cache-path "$MODULE_CACHE" -o "$CHECK_DIR/PoseLifecycleChecks" \

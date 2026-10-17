@@ -156,6 +156,8 @@ public struct PetPoseTimeline: Sendable {
 
     /// Updates the latest source state. A changed state cancels any temporary tap reaction,
     /// and any new target starts from the currently visible blend rather than a stale pose.
+    /// `immediate` is used only by frame-by-frame interactions (the pick-up loop), where a
+    /// cross-fade longer than the frame interval would visibly overlap two poses.
     @discardableResult
     public mutating func update(
         status newStatus: PetActivityStatus,
@@ -164,6 +166,7 @@ public struct PetPoseTimeline: Sendable {
         reduceMotion newReduceMotion: Bool = false,
         allowsIdleAnimation newAllowsIdleAnimation: Bool = true,
         hint newHint: PetActivityHint? = nil,
+        immediate: Bool = false,
         at time: TimeInterval
     ) -> [PetPoseLayer] {
         let now = Self.safeTime(time)
@@ -206,7 +209,7 @@ public struct PetPoseTimeline: Sendable {
             self.idlePose = nil
         }
 
-        retarget(to: effectivePose, at: now)
+        retarget(to: effectivePose, at: now, immediate: immediate)
         return advance(at: now)
     }
 
@@ -367,9 +370,18 @@ public struct PetPoseTimeline: Sendable {
         ["idle-2", "idle-3", "idle-blink"].filter { availablePoseNames.contains($0) }
     }
 
-    private mutating func retarget(to pose: String, at time: TimeInterval) {
+    private mutating func retarget(to pose: String, at time: TimeInterval, immediate: Bool = false) {
         if transitionTarget == pose { return }
         if transitionTarget == nil && settledPose == pose { return }
+
+        if immediate {
+            // A hard cut: the frame-by-frame loop must never stack two poses' arms on top
+            // of each other, so no outgoing layer survives the switch.
+            settledPose = pose
+            transitionSource = []
+            transitionTarget = nil
+            return
+        }
 
         let source = Self.trimmedLayers(visibleLayers(at: time), maximumCount: Self.maximumSourceLayers)
         if source.count == 1, source[0].poseName == pose, source[0].opacity >= 0.999 {

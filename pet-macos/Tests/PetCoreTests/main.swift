@@ -376,7 +376,26 @@ struct PetCoreChecks {
         let hoodieIdle3 = catalog.frame(characterID: "deepseek-hoodie", poseName: "idle-3")
         expect(hoodieIdle2 != nil && hoodieIdle3 != nil && hoodieIdle2 !== hoodieIdle && hoodieIdle3 !== hoodieIdle && hoodieIdle2 !== hoodieIdle3,
                "DeepSeek hoodie idle-2 and idle-3 load their dedicated generated artwork")
-        print("PASS \(decodedCount) WebP decodes, 7-role alpha hit masks, pose mapping, work rhythm candidates and idle fallbacks")
+
+        // Pick-up frames: two distinct decoded images per character, both on the same canvas.
+        for role in PetRole.builtIns {
+            let poses = catalog.poseNames(forCharacterID: role.id)
+            expect(poses.contains("picked-up") && poses.contains("picked-up-2"),
+                   "\(role.id) lists both pick-up frames")
+            guard let head = catalog.frame(characterID: role.id, poseName: "picked-up"),
+                  let tail = catalog.frame(characterID: role.id, poseName: "picked-up-2") else {
+                fatalError("CHECK FAILED: \(role.id) pick-up frames decode")
+            }
+            expect(head !== tail && head.image !== tail.image, "\(role.id) pick-up frames are two different images")
+            expect(head.height == 640 && tail.height == 640, "\(role.id) pick-up frames share the 640 px canvas")
+            expect(head.width == tail.width, "\(role.id) pick-up frames share one width, so no per-frame rescale")
+            expect(catalog.generatedPoseNames(forCharacterID: role.id).contains("picked-up"),
+                   "\(role.id) marks its pick-up frames as locally generated")
+        }
+        expect(PetRole.builtIns.reduce(0) { $0 + catalog.generatedPoseNames(forCharacterID: $1.id).count } == 18,
+               "the catalog marks 18 locally generated poses")
+        expect(decodedCount == 211, "the catalog now ships 211 assets")
+        print("PASS \(decodedCount) WebP decodes, 7-role alpha hit masks, pose mapping, work rhythm candidates, pick-up frames and idle fallbacks")
     }
 
     private static func testAlphaCoverageHit() throws {
@@ -449,6 +468,7 @@ struct PetCoreChecks {
         var policy = PetWindowEventPolicy()
         expect(policy.ignoresMouseEvents(pointerIsOnCharacter: false), "idle pointer outside the character enables window pass-through")
         expect(!policy.ignoresMouseEvents(pointerIsOnCharacter: true), "pointer on visible character keeps the window receptive")
+        expect(!policy.ignoresMouseEvents(pointerIsOnCharacter: false, duringPickUp: true), "an active pick-up keeps the window receptive even over a transparent frame pixel")
 
         policy.beginPointerSequence()
         expect(!policy.ignoresMouseEvents(pointerIsOnCharacter: false), "mouse-down holds event reception through a drag")

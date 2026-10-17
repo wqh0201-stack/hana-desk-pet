@@ -37,8 +37,11 @@ public struct PetWindowEventPolicy: Equatable, Sendable {
         menuTrackingDepth = max(0, menuTrackingDepth - 1)
     }
 
-    public func ignoresMouseEvents(pointerIsOnCharacter: Bool) -> Bool {
-        !isInteractionHeld && !pointerIsOnCharacter
+    /// `duringPickUp` marks an active drag of the character. The pick-up loop swaps between
+    /// two poses whose silhouette differs, so a transparent pixel under the cursor for one
+    /// frame must not hand the window back to the app underneath mid-drag.
+    public func ignoresMouseEvents(pointerIsOnCharacter: Bool, duringPickUp: Bool = false) -> Bool {
+        !isInteractionHeld && !duringPickUp && !pointerIsOnCharacter
     }
 }
 

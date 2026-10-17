@@ -47,6 +47,38 @@ test("generated pose index and WebP files match in both directions", () => {
   }
 });
 
+test("the pick-up frames ship in both the native resources and the console previews, byte-identical", () => {
+  const SOURCE_ASSETS = path.join(ROOT, "assets/crosspet");
+  const NATIVE_ASSETS = path.join(ROOT, "pet-macos/Sources/HanaDesktopPet/Resources/CrossPet");
+  const roles = catalog.characters.map((role) => role.id);
+  assert.equal(roles.length, 7);
+
+  let counted = 0;
+  for (const roleId of roles) {
+    const generated = new Set((catalog.characters.find((role) => role.id === roleId).generatedPoses ?? []));
+    for (const filename of ["picked-up.webp", "picked-up-2.webp"]) {
+      assert.ok(generated.has(filename), `${roleId}/${filename} must be declared as a locally generated pose`);
+      const sourceBytes = fs.readFileSync(path.join(SOURCE_ASSETS, roleId, filename));
+      for (const target of [NATIVE_ASSETS, POSE_ROOT]) {
+        const targetBytes = fs.readFileSync(path.join(target, roleId, filename));
+        assert.ok(sourceBytes.equals(targetBytes), `${roleId}/${filename} must be byte-identical in ${path.relative(ROOT, target)}`);
+      }
+      counted += 1;
+    }
+  }
+  assert.equal(counted, 14, "all seven characters ship both pick-up frames");
+
+  // The onesie skin deliberately uses the older pack, so it must differ from the new waving frames.
+  const onesie = fs.readFileSync(path.join(SOURCE_ASSETS, "gpt-onesie/picked-up.webp"));
+  const whiteDragon = fs.readFileSync(path.join(SOURCE_ASSETS, "gpt/picked-up.webp"));
+  assert.ok(!onesie.equals(whiteDragon), "gpt-onesie must not reuse the white dragon's frame");
+
+  const total = catalog.characters.reduce((sum, role) => sum + role.poseFiles.length, 0);
+  const generatedTotal = catalog.characters.reduce((sum, role) => sum + (role.generatedPoses ?? []).length, 0);
+  assert.equal(total, 211, "catalog lists 211 assets");
+  assert.equal(generatedTotal, 18, "18 of them are locally generated");
+});
+
 test("every catalog-resolvable character/pose pair is indexed, including variants and special poses", () => {
   const combinations = [];
   let parsedCandidates = 0;

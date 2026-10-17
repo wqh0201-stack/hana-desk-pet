@@ -24,6 +24,7 @@ private struct ArtworkCharacter: Decodable {
     let id: String
     let assetDirectory: String
     let poseFiles: [String]
+    let generatedPoses: [String]?
 }
 
 /// A decoded, single-frame character image with a pixel-accurate alpha hit mask.
@@ -119,6 +120,13 @@ public final class PetArtworkCatalog {
 
     public func poseNames(forCharacterID characterID: String) -> [String] {
         charactersByID[characterID]?.poseFiles.map { String($0.dropLast(".webp".count)) } ?? []
+    }
+
+    /// Poses this repository generated locally (as opposed to upstream artwork), taken from
+    /// the catalog's own `generatedPoses` list. Used by checks and attribution, never to
+    /// change which poses are allowed at runtime.
+    public func generatedPoseNames(forCharacterID characterID: String) -> [String] {
+        (charactersByID[characterID]?.generatedPoses ?? []).map { String($0.dropLast(".webp".count)) }
     }
 
     @discardableResult

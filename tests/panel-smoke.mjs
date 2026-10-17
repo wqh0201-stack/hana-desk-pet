@@ -213,6 +213,21 @@ for (const pose of ["reading-2", "happy-2", "sleeping-2", "thinking-2", "sorry"]
       byId.get("pose-fallback").hidden !== true) ok = false;
 }
 
+// The pick-up frames are real catalogued poses the native side reports while dragging; the
+// panel must show them (with a plain-language label) instead of rejecting them as unknown.
+for (const [pose, label] of [["picked-up", "被拎起"], ["picked-up-2", "被拎起·扑腾"]]) {
+  store["hana-pet.bridge.status"] = {
+    status: "connected", reason: null,
+    poseState: { schemaVersion: 3, characterId: "gpt-onesie", pose, fallback: false, since: 12, revision: variantRevision++ },
+  };
+  storageChange?.(["hana-pet.bridge.status"]);
+  await new Promise((r) => setTimeout(r, 20));
+  if (byId.get("stage-image").src !== `./assets/poses/gpt-onesie/${pose}.webp` ||
+      byId.get("pose-name").textContent !== label ||
+      byId.get("pose-connection").textContent !== "桌宠姿态" ||
+      byId.get("pose-fallback").hidden !== true) ok = false;
+}
+
 const reasonCases = [
   ["unreachable", "桌宠没在运行，请打开它。"],
   ["version_mismatch", "桌宠版本与控制台不配套，请换成配套版本。"],

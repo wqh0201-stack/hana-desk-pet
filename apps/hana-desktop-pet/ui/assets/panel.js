@@ -27,6 +27,8 @@ const FOLLOW_RELEASE_LABELS = {
   pinned_missing: "会话已从列表中消失",
 };
 const HINT_LABELS = { confirming: "等待确认", compacting: "上下文压缩中", interrupted: "插话被丢弃" };
+/** Pick-up frames are only shown while the user drags the pet; label them in plain words. */
+const POSE_LABELS = { "picked-up": "被拎起", "picked-up-2": "被拎起·扑腾" };
 const LEGACY_DIAGNOSTIC_LABELS = {
   permission: "缺少 app/sessions.read 授权",
   timeout: "宿主会话调用超时",
@@ -353,16 +355,17 @@ function renderPetPose() {
   const characterId = state?.characterId ?? selection.characterId;
   const role = ROLES.find((item) => item.id === characterId) ?? ROLES[0];
   const pose = state?.pose ?? "idle";
+  const poseLabel = POSE_LABELS[pose] ?? pose;
   const imagePath = `./assets/poses/${role.id}/${pose}.webp`;
   if (renderedPosePath !== imagePath) {
     nodes.stageImage.src = imagePath;
     renderedPosePath = imagePath;
   }
   nodes.stageImage.alt = state
-    ? `${role.name} ${pose} 桌宠姿态${state.fallback ? "，替代姿态" : ""}`
+    ? `${role.name} ${poseLabel} 桌宠姿态${state.fallback ? "，替代姿态" : ""}`
     : `${role.name} idle 立绘，桌宠未连接`;
   nodes.poseConnection.textContent = state ? "桌宠姿态" : "桌宠未连接";
-  nodes.poseName.textContent = pose;
+  nodes.poseName.textContent = poseLabel;
   nodes.poseFallback.hidden = state?.fallback !== true;
 }
 
