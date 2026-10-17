@@ -98,6 +98,8 @@ Hana
 
 完整许可和逐项来源见 `assets/crosspet/CHARACTERS-LICENSE.md` 和 `assets/crosspet/ATTRIBUTION.md`，打包的 `.app` 里也带了一份。CrossPet 上游的 MIT 只覆盖它的源码，不覆盖这些图。
 
+许可要求保留署名、非商业、衍生作品相同方式共享；**不能商用**，也不要去掉署名或换用更宽松的许可。
+
 本项目自己的代码用 MIT，见 `LICENSE`。
 
 ## 自己构建
@@ -107,7 +109,7 @@ sh tools/run-checks.sh      # 全部本地检查，不启动 GUI、不安装、�
 sh tools/package-pet-app.sh # 打桌宠 .app
 ```
 
-打出来的 `.app` 用 ad-hoc 签名，本机可用，分发出去会被 Gatekeeper 拦。
+打出来的 `.app` 用 ad-hoc 签名，本机可用，分发出去会被 Gatekeeper 拦；从 Releases 下载后仍需右键 → 打开。
 
 ## 目录
 
