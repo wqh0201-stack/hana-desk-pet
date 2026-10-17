@@ -1,6 +1,6 @@
 # 变更记录
 
-两端分开版本：**控制台**（Hana v2 App，`apps/hana-desktop-pet`）与**桌宠**（Swift + AppKit，`pet-macos`）。桌宠当前 `0.5.5`，控制台当前 `0.6.2`。
+两端分开版本：**控制台**（Hana v2 App，`apps/hana-desktop-pet`）与**桌宠**（Swift + AppKit，`pet-macos`）。桌宠当前 `0.5.6`，控制台当前 `0.6.2`。
 
 逐轮的详细记录（任务边界、验证数据、未验证项）在 [`docs/迭代记录.md`](docs/迭代记录.md)。
 
@@ -28,6 +28,16 @@
 ## 控制台 0.5.x — 2026-10-17
 
 0.5.0–0.5.5 完成会话清单与跟随、诊断记录、宿主事件表现（等待确认 / 上下文压缩 / 插话被丢弃）与协议 v3 对齐。逐轮细节见 `docs/迭代记录.md`。
+
+## 桌宠 0.5.6 — 2026-10-17
+
+- 同一会话里有了连续动作节奏：普通工作按 思考 6s → 左忙 4s → 思考变体 7s → 右忙 5s 循环（共 22 秒）。
+- 第三阶段用角色自己的思考变体：Claude `thinking-2`、DeepSeek 与大肥鱼卫衣 `deepthink`，其余回 `thinking`。
+- 工具动作结束后留 1.2 秒回归宽限，且保证工具姿态至少出现 2 秒；成功/报错/提示/情绪/会话切换会立即接管。
+- 会话跟随、防乒乓、协议 v3、路由、权限、素材与 catalog 全部未改。
+- `/v3/state` 的 `pose` 现在是最终展示姿态；主动轮换不误报 `fallback`。
+- 删掉未被生产使用的 `PetArtworkPoseMapper`（它会把 working 映射成 writing 交替）。
+- 验证：`run-checks.sh` exit 0（Node 111、Planner 438、Scheduler 415、Timeline 172、跨层 272、PetCore 16）。GUI 观感未验收。
 
 ## 桌宠 0.5.5 — 2026-10-17
 

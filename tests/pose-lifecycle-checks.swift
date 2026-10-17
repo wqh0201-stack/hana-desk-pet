@@ -139,6 +139,99 @@ private struct PoseLifecycleChecks {
         }
 
         print("PoseLifecycleChecks: \(checks) cross-layer checks passed (claude layout \(Int(layout.windowSize.width))x\(Int(layout.windowSize.height)) pt, maxAspect \(catalog.maximumAspectRatio))")
+        try checkConcurrentFollowIntoWorkScheduler(catalog: catalog, fixture: fixture)
+        print("PoseLifecycleChecks: \(checks) cross-layer checks passed including synthetic concurrent follow")
+    }
+
+    /// Replays the synthetic concurrent-follow steps through the real native path and then
+    /// through the new work scheduler. The follow rules are asserted unchanged; the
+    /// scheduler only has to prove it never writes a pose across a session switch.
+    private static func checkConcurrentFollowIntoWorkScheduler(
+        catalog: PetArtworkCatalog,
+        fixture: [String: Any]
+    ) throws {
+        guard let rawSteps = fixture["concurrentSteps"] as? [[String: Any]], rawSteps.count == 9 else {
+            fatalError("CHECK FAILED: the synthetic concurrent fixture is missing or incomplete")
+        }
+        let poses = catalog.poseNames(forCharacterID: "claude")
+        let workSet = PetPosePlanner.workPoseSet(characterID: "claude", availablePoseNames: poses)
+        let store = PetStateStore()
+        let api = PetAPI(store: store)
+        var mood = PetPoseMoodTracker()
+        var scheduler = PetWorkPoseScheduler()
+        var clock = 0.0
+        var queued: [(PetWorkPoseIdentity?, UInt64)] = []
+
+        for (index, rawStep) in rawSteps.enumerated() {
+            let label = rawStep["label"] as? String ?? "concurrent step \(index)"
+            guard let dto = rawStep["dto"] as? [String: Any],
+                  let expectation = rawStep["expectation"] as? [String: Any],
+                  let expectedOwner = expectation["current"] as? String else {
+                fatalError("CHECK FAILED: \(label) carries no DTO or expectation")
+            }
+            expect(api.handle(jsonRequest("POST", "/v3/snapshot", dto)).statusCode == 200 ||
+                   store.viewState().activity.sessionId == expectedOwner,
+                   "\(label) is accepted by the strict v3 parser")
+
+            let state = store.viewState()
+            expect(state.activity.sessionId == expectedOwner,
+                   "\(label) projects the session the existing follow rules selected")
+
+            clock += 1
+            _ = mood.update(
+                status: state.displayStatus,
+                toolName: state.activity.toolName,
+                hint: state.displayHint,
+                lastActivityAt: state.activity.lastActivityAt,
+                at: clock
+            )
+            let realPose = PetPosePlanner.resolvedPose(
+                preferred: PetPosePlanner.preferredPose(
+                    for: state.displayStatus,
+                    toolName: state.activity.toolName,
+                    hint: state.displayHint
+                ),
+                availablePoseNames: poses
+            )
+            let tick = scheduler.update(
+                PetWorkPoseSchedulerInput(
+                    sessionId: state.activity.sessionId,
+                    workSegmentStart: mood.continuousWorkStart,
+                    status: state.displayStatus,
+                    hint: state.displayHint,
+                    hasPriorityState: mood.mood(at: clock) != nil,
+                    allowsAutonomousRotation: true,
+                    interactionIsActive: false,
+                    realPose: realPose
+                ),
+                workPoses: workSet,
+                at: clock
+            )
+            if let pose = tick.pose {
+                expect(poses.contains(pose), "\(label) scheduler pose is catalogued artwork")
+                expect(pose != "writing" && pose != "reading", "\(label) rhythm never fabricates a semantic tool pose")
+            }
+            if tick.identity != nil {
+                queued.append((tick.identity, tick.generation))
+            }
+        }
+
+        // Every callback queued before the handover must spin empty afterwards.
+        let finalIdentity = scheduler.currentIdentity
+        let finalGeneration = scheduler.currentGeneration
+        let staleTokens = queued.filter { $0.0 != finalIdentity || $0.1 != finalGeneration }
+        expect(!staleTokens.isEmpty, "the concurrent sequence really did hand over the followed session")
+        let poseBefore = scheduler.currentPose(at: clock)
+        for token in staleTokens {
+            let discarded = scheduler.advance(identity: token.0, generation: token.1, at: clock + 1)
+            expect(discarded.discardedStaleTick, "a callback queued under another session is discarded")
+        }
+        expect(scheduler.currentPose(at: clock + 1) == poseBefore,
+               "discarded callbacks leave the current session's pose untouched")
+
+        // The current token still advances normally.
+        let live = scheduler.advance(identity: finalIdentity, generation: finalGeneration, at: clock + 1)
+        expect(!live.discardedStaleTick, "the current session's own callback still advances")
     }
 
     private static func jsonRequest(_ method: String, _ path: String, _ object: [String: Any]) -> PetHTTPRequest {

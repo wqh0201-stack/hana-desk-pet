@@ -71,3 +71,37 @@ test("the fixture stays deterministic and serializable for the native replay", (
   const revisions = parsed.steps.map((step) => step.dto.revision);
   assert.deepEqual(revisions, [...revisions].sort((a, b) => a - b), "revisions are strictly increasing for the native store");
 });
+
+// --- Synthetic concurrent follow input -----------------------------------------
+//
+// These steps feed the existing follow rules only. The 30-second active-work protection
+// and the 2-second activity lead are asserted as they are implemented today; the pet's
+// new display rhythm must not be able to change them.
+test("two concurrent synthetic sessions keep the existing anti-ping-pong protection", () => {
+  const byLabel = new Map(fixture.concurrentSteps.map((step) => [step.label, step]));
+  const alpha = "concurrent-session-alpha";
+  const beta = "concurrent-session-beta";
+
+  assert.equal(byLabel.get("alpha_starts").dto.activity.sessionId, alpha, "the first worker owns the pet");
+  assert.equal(byLabel.get("beta_starts_inside_active_protection").dto.activity.sessionId, alpha,
+    "a second session starting inside the active-work window cannot steal the pet");
+  assert.equal(byLabel.get("beta_progress_still_protected").dto.activity.sessionId, alpha,
+    "repeated progress inside the window still cannot steal the pet");
+  assert.equal(byLabel.get("alpha_tool_start").dto.activity.status, "tool", "the incumbent tool run is projected");
+  assert.equal(byLabel.get("beta_progress_before_protection_expires").dto.activity.sessionId, alpha,
+    "the protection lasts until the incumbent has been quiet for 30 seconds");
+  assert.equal(byLabel.get("beta_overtakes_after_protection").dto.activity.sessionId, beta,
+    "past the window the newer session takes over");
+  assert.equal(byLabel.get("alpha_cannot_steal_back_inside_protection").dto.activity.sessionId, beta,
+    "the new incumbent then gets the same protection");
+  assert.equal(byLabel.get("alpha_returns_after_protection_and_margin").dto.activity.sessionId, alpha,
+    "after both windows the newest activity wins again");
+  for (const step of fixture.concurrentSteps) {
+    assert.equal(step.dto.activity.sessionId, step.expectation.current, `${step.label} current owner`);
+    assert.equal(step.dto.schemaVersion, 3, `${step.label} stays schema v3`);
+    const serialized = JSON.stringify(step.dto);
+    for (const sentinel of LIFECYCLE_PRIVATE_SENTINELS) {
+      assert.equal(serialized.includes(sentinel), false, `${step.label} leaks ${sentinel}`);
+    }
+  }
+});

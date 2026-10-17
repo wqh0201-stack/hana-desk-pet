@@ -9,23 +9,11 @@ public enum PetArtworkCatalogError: Error, Equatable {
     case assetUnavailable(characterID: String, filename: String)
 }
 
-public enum PetArtworkPoseMapper {
-    public static func poseName(for status: PetActivityStatus, animationStep: Int) -> String {
-        switch status {
-        case .idle:
-            if animationStep % 13 == 8 { return "idle-blink" }
-            return ["idle", "idle-2", "idle-3"][(animationStep / 2) % 3]
-        case .working:
-            return animationStep % 2 == 0 ? "thinking" : "writing"
-        case .tool:
-            return animationStep % 2 == 0 ? "busy_left" : "busy_right"
-        case .success:
-            return "happy"
-        case .error:
-            return "oops"
-        }
-    }
-}
+// The artwork layer has exactly one source of truth for which pose to show:
+// `PetPosePlanner` for the real activity state and `PetWorkPoseScheduler` for the
+// ordinary-work rhythm. A second status→pose mapper previously lived here and mapped
+// `.working` onto `thinking`/`writing`; it had no production call site and would have
+// made a semantic tool pose (writing) look like decoration, so it was removed.
 
 private struct ArtworkCatalogDocument: Decodable {
     let schemaVersion: Int

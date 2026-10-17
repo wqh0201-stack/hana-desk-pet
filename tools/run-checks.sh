@@ -74,8 +74,19 @@ swiftc -parse-as-library -module-cache-path "$MODULE_CACHE" -o "$CHECK_DIR/PoseP
   "$CORE_DIR/PetArtworkCatalog.swift" \
   "$CORE_DIR/PetPosePlanner.swift" \
   "$CORE_DIR/PetPoseMood.swift" \
+  "$CORE_DIR/PetWorkPoseScheduler.swift" \
   tests/pose-planner-checks.swift
 "$CHECK_DIR/PosePlannerChecks" "$ASSETS"
+
+echo "== Pose work scheduler checks (A) =="
+swiftc -parse-as-library -module-cache-path "$MODULE_CACHE" -o "$CHECK_DIR/PoseWorkSchedulerChecks" \
+  "$CORE_DIR/PetState.swift" \
+  "$CORE_DIR/PetArtworkCatalog.swift" \
+  "$CORE_DIR/PetPosePlanner.swift" \
+  "$CORE_DIR/PetPoseMood.swift" \
+  "$CORE_DIR/PetWorkPoseScheduler.swift" \
+  tests/pose-work-scheduler-checks.swift
+"$CHECK_DIR/PoseWorkSchedulerChecks" "$ASSETS"
 
 echo "== Pose timeline checks (C) =="
 swiftc -parse-as-library -module-cache-path "$MODULE_CACHE" -o "$CHECK_DIR/PoseTimelineChecks" \
@@ -85,6 +96,7 @@ swiftc -parse-as-library -module-cache-path "$MODULE_CACHE" -o "$CHECK_DIR/PoseT
   "$CORE_DIR/PetPoseTimeline.swift" \
   "$CORE_DIR/PetPosePlanner.swift" \
   "$CORE_DIR/PetPoseMood.swift" \
+  "$CORE_DIR/PetWorkPoseScheduler.swift" \
   tests/pose-timeline-checks.swift
 "$CHECK_DIR/PoseTimelineChecks"
 
@@ -99,6 +111,8 @@ swiftc -parse-as-library -module-cache-path "$MODULE_CACHE" -o "$CHECK_DIR/PoseL
   "$CORE_DIR/PetArtworkCatalog.swift" \
   "$CORE_DIR/PetPoseHitCoverage.swift" \
   "$CORE_DIR/PetPosePlanner.swift" \
+  "$CORE_DIR/PetPoseMood.swift" \
+  "$CORE_DIR/PetWorkPoseScheduler.swift" \
   tests/pose-lifecycle-checks.swift
 "$CHECK_DIR/PoseLifecycleChecks" "$FIXTURE" "$ASSETS"
 

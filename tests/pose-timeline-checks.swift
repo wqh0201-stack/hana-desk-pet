@@ -15,6 +15,10 @@ struct PetPoseTimelineChecks {
         testHintPriorityInterruptAndStandby()
         testSleepingDoesNotRestartIdleAnimation()
         testFixedHeightLayoutAndTransform()
+        testWorkRhythmThroughTimeline()
+        testTapResponseDefersRotation()
+        testReducedMotionStopsRotationNotFeedback()
+        testMoodRegressionWithRhythm()
         print("PoseTimelineChecks: \(checkCount) checks passed.")
     }
 
@@ -353,6 +357,236 @@ struct PetPoseTimelineChecks {
             let restored = motion.unapplying(to: moved)
             expect(abs(restored.x - point.x) < 1e-9 && abs(restored.y - point.y) < 1e-9, "draw and alpha-hit inverse transforms agree")
         }
+    }
+
+    private static func testWorkRhythmThroughTimeline() {
+        let poses = allPoses
+        let workSet = PetWorkPoseSet(
+            thinking: "thinking",
+            busyLeft: "busy_left",
+            thinkingVariant: "thinking-2",
+            busyRight: "busy_right"
+        )
+        var scheduler = PetWorkPoseScheduler()
+        var timeline = PetPoseTimeline()
+
+        func render(at time: Double, status: PetActivityStatus = .working, hint: PetActivityHint? = nil) -> [PetPoseLayer] {
+            let realPose = PetPosePlanner.resolvedPose(
+                preferred: PetPosePlanner.preferredPose(for: status, toolName: nil, hint: hint),
+                availablePoseNames: poses
+            )
+            let tick = scheduler.update(
+                PetWorkPoseSchedulerInput(
+                    sessionId: "session-timeline",
+                    workSegmentStart: 0,
+                    status: status,
+                    hint: hint,
+                    hasPriorityState: false,
+                    allowsAutonomousRotation: true,
+                    interactionIsActive: timeline.hasActiveReaction,
+                    realPose: realPose
+                ),
+                workPoses: workSet,
+                at: time
+            )
+            return timeline.update(
+                status: status,
+                basePose: tick.pose ?? realPose,
+                availablePoseNames: poses,
+                hint: hint,
+                at: time
+            )
+        }
+
+        expect(render(at: 0) == [PetPoseLayer(poseName: "thinking", opacity: 1)],
+               "the rhythm's first frame settles immediately")
+        expect(timeline.nextWakeAt(after: 0) == nil, "a stable rhythm stage adds no animation timer of its own")
+        let boundary = render(at: 6.001)
+        expect(boundary == [PetPoseLayer(poseName: "thinking", opacity: 1)],
+               "a rhythm stage change starts from the currently visible pose")
+        let midFade = timeline.advance(at: 6.101)
+        expect(midFade.count == 2 && opacity("busy_left", in: midFade) > 0.4 && opacity("thinking", in: midFade) > 0.4,
+               "a rhythm stage change goes through the shared cross-fade")
+        expect(timeline.advance(at: 6.201) == [PetPoseLayer(poseName: "busy_left", opacity: 1)],
+               "the rhythm cross-fade settles in 0.20 seconds")
+        expect(render(at: 10.001) == [PetPoseLayer(poseName: "busy_left", opacity: 1)],
+               "the next stage also starts from what is on screen")
+        expect(timeline.advance(at: 10.201) == [PetPoseLayer(poseName: "thinking-2", opacity: 1)],
+               "the thinking variant settles without a jump")
+
+        // A tool preempts an in-flight rhythm cross-fade without a visible jump.
+        let mid = timeline.update(status: .working, basePose: "busy_right", availablePoseNames: poses, at: 17.1)
+        let tool = timeline.update(status: .tool, basePose: "reading", availablePoseNames: poses, at: 17.1)
+        expect(tool == mid, "a real tool interrupts the rhythm cross-fade continuously")
+        expect(timeline.advance(at: 17.31) == [PetPoseLayer(poseName: "reading", opacity: 1)],
+               "the real tool pose settles normally")
+
+        // A hint covers the rhythm and falls back through the existing chain.
+        let hintLayers = render(at: 18, hint: .confirming)
+        expect(hintLayers.count >= 1, "a hint produces a visible target")
+        expect(timeline.advance(at: 18.21) == [PetPoseLayer(poseName: "asking", opacity: 1)],
+               "a hint reaches the asking pose while the rhythm is suspended")
+        expect(scheduler.nextDeadline(after: 18) == nil, "a suspended rhythm schedules no wake-up")
+    }
+
+    private static func testTapResponseDefersRotation() {
+        let poses = allPoses
+        let workSet = PetWorkPoseSet(
+            thinking: "thinking",
+            busyLeft: "busy_left",
+            thinkingVariant: "thinking-2",
+            busyRight: "busy_right"
+        )
+        var scheduler = PetWorkPoseScheduler()
+        var timeline = PetPoseTimeline()
+
+        func tick(at time: Double) -> PetWorkPoseSchedulerTick {
+            scheduler.update(
+                PetWorkPoseSchedulerInput(
+                    sessionId: "session-tap",
+                    workSegmentStart: 0,
+                    status: .working,
+                    hint: nil,
+                    hasPriorityState: false,
+                    allowsAutonomousRotation: true,
+                    interactionIsActive: timeline.hasActiveReaction,
+                    realPose: "thinking"
+                ),
+                workPoses: workSet,
+                at: time
+            )
+        }
+
+        _ = tick(at: 0)
+        _ = timeline.update(status: .working, basePose: "thinking", availablePoseNames: poses, at: 0)
+        _ = timeline.beginReaction(pose: "happy", at: 5)
+        let duringTap = tick(at: 5)
+        expect(duringTap.pose == "thinking", "the rhythm holds its stage during a tap response")
+        expect(duringTap.nextDeadline == nil, "no rhythm deadline can cancel the tap response")
+        let responseFade = timeline.advance(at: 5.1)
+        expect(opacity("happy", in: responseFade) > 0, "the tap response itself is not interrupted by the rhythm")
+        _ = timeline.advance(at: 5.6)
+        expect(!timeline.hasActiveReaction, "the tap response ends on its own short duration")
+        let resumed = tick(at: 5.6)
+        expect(resumed.pose == "thinking", "the rhythm resumes on the same stage after the response")
+        expect(resumed.nextDeadline == 6.6, "the 0.6-second pause is removed from the cycle instead of being skipped")
+
+        // Pointer-down during a response settles on the latest state, as before.
+        _ = timeline.beginReaction(pose: "happy", at: 7)
+        let afterPointerDown = timeline.interruptReaction(at: 7.1)
+        expect(!timeline.hasActiveReaction, "pointer-down still cancels the tap response")
+        expect(afterPointerDown.contains { $0.poseName == "thinking" }, "pointer-down returns to the rhythm pose")
+    }
+
+    private static func testReducedMotionStopsRotationNotFeedback() {
+        let poses = allPoses
+        let workSet = PetWorkPoseSet(
+            thinking: "thinking",
+            busyLeft: "busy_left",
+            thinkingVariant: "thinking-2",
+            busyRight: "busy_right"
+        )
+        var scheduler = PetWorkPoseScheduler()
+        var timeline = PetPoseTimeline()
+        let reduced = scheduler.update(
+            PetWorkPoseSchedulerInput(
+                sessionId: "session-motion",
+                workSegmentStart: 0,
+                status: .working,
+                hint: nil,
+                hasPriorityState: false,
+                allowsAutonomousRotation: false,
+                interactionIsActive: false,
+                realPose: "thinking"
+            ),
+            workPoses: workSet,
+            at: 0
+        )
+        expect(reduced.pose == nil && reduced.nextDeadline == nil,
+               "reduced motion removes the autonomous work rotation")
+        expect(timeline.update(
+            status: .working,
+            basePose: "thinking",
+            availablePoseNames: poses,
+            reduceMotion: true,
+            at: 0
+        ) == [PetPoseLayer(poseName: "thinking", opacity: 1)], "the stable work pose still renders")
+        _ = timeline.update(status: .tool, basePose: "reading", availablePoseNames: poses, reduceMotion: true, at: 1)
+        expect(timeline.advance(at: 1.04).count == 2, "real tool feedback still cross-fades under reduced motion")
+        expect(timeline.advance(at: 1.09) == [PetPoseLayer(poseName: "reading", opacity: 1)],
+               "reduced-motion feedback settles quickly")
+    }
+
+    private static func testMoodRegressionWithRhythm() {
+        let poses = allPoses + ["sleeping", "tired", "swamped_left", "swamped_right", "proud"]
+        let workSet = PetWorkPoseSet(
+            thinking: "thinking",
+            busyLeft: "busy_left",
+            thinkingVariant: "thinking-2",
+            busyRight: "busy_right"
+        )
+        var mood = PetPoseMoodTracker()
+        var scheduler = PetWorkPoseScheduler()
+        var timeline = PetPoseTimeline()
+
+        // Thirty seconds of rhythm must not shorten the fatigue threshold.
+        var time = 0.0
+        while time <= 30 {
+            _ = mood.update(status: .working, toolName: nil, lastActivityAt: 10, at: time)
+            _ = scheduler.update(
+                PetWorkPoseSchedulerInput(
+                    sessionId: "session-mood",
+                    workSegmentStart: mood.continuousWorkStart,
+                    status: .working,
+                    hint: nil,
+                    hasPriorityState: false,
+                    allowsAutonomousRotation: true,
+                    interactionIsActive: false,
+                    realPose: "thinking"
+                ),
+                workPoses: workSet,
+                at: time
+            )
+            time += 1
+        }
+        expect(mood.mood(at: 30) == nil, "rhythm changes alone never reach a mood")
+        _ = timeline.update(status: .working, basePose: "thinking", availablePoseNames: poses, at: 30)
+
+        // Fatigue: the mood owns the artwork and the rhythm goes quiet.
+        let tiredMood = mood.advance(at: PetPoseMoodTracker.tiredAfterWork + 0.01)
+        expect(tiredMood == .tired, "continuous work still reaches fatigue")
+        let tiredPose = PetPoseMood.resolvedPose(for: .tired, workPose: "thinking", availablePoseNames: poses)
+        let tiredTick = scheduler.update(
+            PetWorkPoseSchedulerInput(
+                sessionId: "session-mood",
+                workSegmentStart: mood.continuousWorkStart,
+                status: .working,
+                hint: nil,
+                hasPriorityState: true,
+                allowsAutonomousRotation: true,
+                interactionIsActive: false,
+                realPose: tiredPose
+            ),
+            workPoses: workSet,
+            at: PetPoseMoodTracker.tiredAfterWork + 0.01
+        )
+        expect(tiredTick.pose == nil && tiredTick.nextDeadline == nil, "fatigue silences the rhythm entirely")
+        _ = timeline.update(
+            status: .working,
+            basePose: tiredPose,
+            availablePoseNames: poses,
+            allowsIdleAnimation: true,
+            at: PetPoseMoodTracker.tiredAfterWork + 0.01
+        )
+        expect(timeline.advance(at: PetPoseMoodTracker.tiredAfterWork + 0.21) == [PetPoseLayer(poseName: "tired", opacity: 1)],
+               "the tired pose still renders through the same timeline")
+
+        // Idle → sleeping still needs strictly more than five minutes.
+        var sleepy = PetPoseMoodTracker()
+        _ = sleepy.update(status: .idle, toolName: nil, lastActivityAt: 99, at: 0)
+        expect(sleepy.advance(at: PetPoseMoodTracker.sleepAfterIdle) == nil, "sleep remains strict")
+        expect(sleepy.advance(at: PetPoseMoodTracker.sleepAfterIdle + 0.001) == .sleeping,
+               "sleep still begins just past five idle minutes")
     }
 
     private static var allPoses: [String] {

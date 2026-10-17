@@ -94,6 +94,7 @@ final class PetWindowView: NSView, NSMenuDelegate {
         artwork.update(
             roleId: state.selection.characterId,
             roleName: roleName,
+            sessionId: state.activity.sessionId,
             status: state.displayStatus,
             toolName: toolName,
             lastActivityAt: state.activity.lastActivityAt,
@@ -278,10 +279,13 @@ private final class PetCharacterView: NSView {
     private(set) var status: PetActivityStatus = .idle
     private var basePose = "idle"
     private var availablePoseNames: [String] = []
+    private var workPoses: PetWorkPoseSet?
     private var reduceMotion = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
     private var motionIsActive = false
     private var timeline = PetPoseTimeline()
     private var moodTracker = PetPoseMoodTracker()
+    private var workScheduler = PetWorkPoseScheduler()
+    private var currentSessionId: String?
     private var currentHint: PetActivityHint?
     private var currentToolName: String?
     private var lastActivityAt: Int64 = 0
@@ -290,6 +294,7 @@ private final class PetCharacterView: NSView {
     private var artworkUseOrder: [String] = []
     private var wakeTimer: Timer?
     private var scheduledWakeAt: TimeInterval?
+    private var scheduledWakeToken: WakeToken?
     private var windowVisibilityObserver: NSObjectProtocol?
     private var appHideObserver: NSObjectProtocol?
     private var appUnhideObserver: NSObjectProtocol?
@@ -381,23 +386,25 @@ private final class PetCharacterView: NSView {
         let shouldAnimate = visible && !NSApp.isHidden
         guard motionIsActive != shouldAnimate else { return }
         motionIsActive = shouldAnimate
-        if motionIsActive {
-            advanceTimeline(at: ProcessInfo.processInfo.systemUptime)
-        } else {
-            cancelWakeTimer()
-        }
+        // Becoming invisible stops every autonomous deadline; becoming visible rebuilds the
+        // rhythm from the current real state instead of replaying the hidden span.
+        applyLatestState(at: ProcessInfo.processInfo.systemUptime)
+        if !motionIsActive { cancelWakeTimer() }
     }
 
     func update(
         roleId: String,
         roleName: String,
+        sessionId: String?,
         status: PetActivityStatus,
         toolName: String?,
         lastActivityAt: Int64,
         hint: PetActivityHint?
     ) {
         let roleChanged = self.roleId != roleId
+        let sessionChanged = currentSessionId != sessionId
         self.roleId = roleId
+        self.currentSessionId = sessionId
         self.status = status
         self.currentToolName = toolName
         self.lastActivityAt = lastActivityAt
@@ -406,10 +413,24 @@ private final class PetCharacterView: NSView {
         let preferredPose = PetPosePlanner.preferredPose(for: status, toolName: toolName, hint: status == .error ? nil : hint)
         let resolvedPose = PetPosePlanner.resolvedPose(preferred: preferredPose, availablePoseNames: poses)
         availablePoseNames = poses
+        workPoses = PetPosePlanner.workPoseSet(characterID: roleId, availablePoseNames: poses)
         basePose = resolvedPose
         if roleChanged {
             clearArtworkCache()
             timeline = PetPoseTimeline(initialPose: resolvedPose)
+        }
+        if sessionChanged {
+            // A new session inherits neither the previous session's display history nor its
+            // mood accumulation: the action clock, the tool tail, a pending tap response and
+            // the fatigue start all restart. The continuous work clock itself stays owned by
+            // the mood tracker.
+            workScheduler = PetWorkPoseScheduler()
+            moodTracker = PetPoseMoodTracker()
+            _ = timeline.interruptReaction(at: ProcessInfo.processInfo.systemUptime)
+        } else if roleChanged {
+            // Changing outfit inside one session keeps the continuous work history; only the
+            // display phases are rebuilt for the new artwork.
+            workScheduler.rebuildRhythm(workPoses: workPoses, at: ProcessInfo.processInfo.systemUptime)
         }
         setAccessibilityLabel("\(roleName)桌宠")
         setAccessibilityValue(accessibilityStatus(status))
@@ -437,8 +458,9 @@ private final class PetCharacterView: NSView {
             : nil
         let now = ProcessInfo.processInfo.systemUptime
         displayedLayers = timeline.beginReaction(pose: responsePose, at: now)
-        needsDisplay = true
-        scheduleWake(at: now)
+        // Register the response with the work scheduler immediately, so an autonomous
+        // rotation cannot fire between the tap and the next rendering pass.
+        applyLatestState(at: now)
     }
 
     private func applyLatestState(at time: TimeInterval) {
@@ -453,13 +475,39 @@ private final class PetCharacterView: NSView {
         let preferredPose = PetPosePlanner.preferredPose(for: status, toolName: currentToolName, hint: activeHint)
         let workPose = PetPosePlanner.resolvedPose(preferred: preferredPose, availablePoseNames: availablePoseNames)
         let fallback: Bool
+        let realPose: String
+        let hasPriorityState: Bool
         if activeHint == nil, let mood {
-            basePose = PetPoseMood.resolvedPose(for: mood, workPose: workPose, availablePoseNames: availablePoseNames)
-            fallback = basePose != primaryPose(for: mood)
+            realPose = PetPoseMood.resolvedPose(for: mood, workPose: workPose, availablePoseNames: availablePoseNames)
+            fallback = realPose != primaryPose(for: mood)
+            hasPriorityState = true
         } else {
-            basePose = workPose
-            fallback = basePose != preferredPose
+            realPose = workPose
+            fallback = realPose != preferredPose
+            hasPriorityState = false
         }
+
+        // The action clock only decides which ordinary-work artwork to show. It reads the
+        // mood tracker's continuous work start and never writes it.
+        let workTick = workScheduler.update(
+            PetWorkPoseSchedulerInput(
+                sessionId: currentSessionId,
+                workSegmentStart: moodTracker.continuousWorkStart,
+                status: status,
+                hint: activeHint,
+                hasPriorityState: hasPriorityState,
+                allowsAutonomousRotation: motionIsActive && !reduceMotion,
+                interactionIsActive: timeline.hasActiveReaction,
+                realPose: realPose
+            ),
+            workPoses: workPoses,
+            at: time
+        )
+        basePose = workTick.pose ?? realPose
+        // Autonomous rotation is never a missing-artwork substitution, so only the pose that
+        // actually came out of the planner/mood chain may carry the fallback flag.
+        let reportedFallback = fallback && basePose == realPose
+
         displayedLayers = timeline.update(
             status: status,
             basePose: basePose,
@@ -469,7 +517,7 @@ private final class PetCharacterView: NSView {
             hint: activeHint,
             at: time
         )
-        poseReadback.update(characterId: roleId, pose: basePose, fallback: fallback)
+        poseReadback.update(characterId: roleId, pose: basePose, fallback: reportedFallback)
         needsDisplay = true
         scheduleWake(at: time)
     }
@@ -490,15 +538,31 @@ private final class PetCharacterView: NSView {
         applyLatestState(at: time)
     }
 
+    /// Identity/generation captured when a one-shot wake was scheduled. A callback that no
+    /// longer matches the live scheduler is discarded outright: it may not write a pose,
+    /// rebuild phases or reschedule a deadline.
+    private struct WakeToken: Equatable {
+        let identity: PetWorkPoseIdentity?
+        let generation: UInt64
+    }
+
     private func scheduleWake(at time: TimeInterval) {
-        let deadline = [timeline.nextWakeAt(after: time), moodTracker.nextDeadline(after: time)]
+        let deadline = [
+            timeline.nextWakeAt(after: time),
+            moodTracker.nextDeadline(after: time),
+            workScheduler.nextDeadline(after: time),
+        ]
             .compactMap { $0 }
             .min()
         guard motionIsActive, let deadline else {
             cancelWakeTimer()
             return
         }
-        if let scheduledWakeAt, abs(scheduledWakeAt - deadline) < 0.01 { return }
+        let token = WakeToken(
+            identity: workScheduler.currentIdentity,
+            generation: workScheduler.currentGeneration
+        )
+        if let scheduledWakeAt, abs(scheduledWakeAt - deadline) < 0.01, scheduledWakeToken == token { return }
         wakeTimer?.invalidate()
         let timer = Timer(timeInterval: max(0.001, deadline - time), repeats: false) { [weak self] firedTimer in
             guard let self else {
@@ -508,18 +572,32 @@ private final class PetCharacterView: NSView {
             if self.wakeTimer === firedTimer {
                 self.wakeTimer = nil
                 self.scheduledWakeAt = nil
+                self.scheduledWakeToken = nil
             }
-            self.advanceTimeline(at: ProcessInfo.processInfo.systemUptime)
+            self.wake(from: token)
         }
         wakeTimer = timer
         scheduledWakeAt = deadline
+        scheduledWakeToken = token
         RunLoop.main.add(timer, forMode: .common)
+    }
+
+    private func wake(from token: WakeToken) {
+        let now = ProcessInfo.processInfo.systemUptime
+        // The merged wake timer also serves mood deadlines, so a callback whose scheduler
+        // token is stale still re-renders the current state — it just never advances the old
+        // phase, which is what keeps a queued callback from writing a pose into a new context.
+        if workScheduler.matches(identity: token.identity, generation: token.generation) {
+            _ = workScheduler.advance(identity: token.identity, generation: token.generation, at: now)
+        }
+        applyLatestState(at: now)
     }
 
     private func cancelWakeTimer() {
         wakeTimer?.invalidate()
         wakeTimer = nil
         scheduledWakeAt = nil
+        scheduledWakeToken = nil
     }
 
     private func currentMotion() -> PetCharacterMotion {

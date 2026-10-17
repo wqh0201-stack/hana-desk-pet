@@ -33,6 +33,35 @@ public enum PetPosePlanner {
         }
     }
 
+    /// Resolves the ordinary-work rhythm poses for one character, using only catalog-listed
+    /// artwork. `busy_left`/`busy_right` are generic work poses, and the third stage uses the
+    /// character's own thinking variant (never another character's artwork). Semantic poses
+    /// such as `writing` are never used as decoration.
+    public static func workPoseSet(characterID: String, availablePoseNames: [String]) -> PetWorkPoseSet? {
+        guard !availablePoseNames.isEmpty else { return nil }
+        let available = Set(availablePoseNames)
+        let thinking = resolvedPose(preferred: "thinking", availablePoseNames: availablePoseNames)
+        let variant = available.contains(workThinkingVariant(for: characterID))
+            ? workThinkingVariant(for: characterID)
+            : thinking
+        let set = PetWorkPoseSet(
+            thinking: thinking,
+            busyLeft: available.contains("busy_left") ? "busy_left" : thinking,
+            thinkingVariant: variant,
+            busyRight: available.contains("busy_right") ? "busy_right" : thinking
+        )
+        return set.supportsRhythm ? set : nil
+    }
+
+    /// The one thinking-variant a character may use in its own work rhythm.
+    public static func workThinkingVariant(for characterID: String) -> String {
+        switch characterID {
+        case "claude": return "thinking-2"
+        case "deepseek", "deepseek-hoodie": return "deepthink"
+        default: return "thinking"
+        }
+    }
+
     /// Resolves a preferred pose against one character's catalog-listed pose names.
     /// The returned value is always present in a non-empty catalog list; valid catalogs
     /// require `idle`, which is the final fallback. A malformed list without `idle`

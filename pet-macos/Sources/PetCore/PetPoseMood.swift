@@ -228,6 +228,11 @@ public struct PetPoseMoodTracker: Sendable {
         return max(safe, lastObservedAt ?? safe)
     }
 
+    /// The start of the current continuous work segment, whether it is still open or has just
+    /// been closed by a short tool-result feedback window. Read-only: it is the single work
+    /// clock shared by fatigue and the ordinary-work rhythm.
+    public var continuousWorkStart: TimeInterval? { workSince }
+
     private static func isWorkStatus(_ status: PetActivityStatus?) -> Bool {
         status == .working || status == .tool
     }

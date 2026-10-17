@@ -89,7 +89,70 @@ export function buildLifecycleFixture() {
     sessionId: IDENTITY.sessionId,
     privateSentinels: LIFECYCLE_PRIVATE_SENTINELS,
     steps: buildLifecycleSteps(),
+    concurrentSteps: buildConcurrentSteps(),
   };
+}
+
+// --- Synthetic concurrent follow input -----------------------------------------
+//
+// Two synthetic sessions compete for the pet. The expectations below are the follow
+// rules that already exist in `state-core.mjs` (30-second active-work protection and a
+// 2-second activity lead); this sequence only feeds them, it never changes them.
+// The native half replays the emitted DTOs through the scheduler and checks that a
+// session switch invalidates the queued display callbacks.
+const CONCURRENT_A = Object.freeze({
+  sessionId: "concurrent-session-alpha",
+  title: "并发会话·甲",
+  agentId: "agent-alpha",
+  agentName: "甲",
+});
+const CONCURRENT_B = Object.freeze({
+  sessionId: "concurrent-session-beta",
+  title: "并发会话·乙",
+  agentId: "agent-beta",
+  agentName: "乙",
+});
+
+// `owner` is the session the event belongs to; `expectedCurrent` is who must own the
+// pet afterwards according to the existing follow rules.
+const CONCURRENT_SEQUENCE = [
+  { label: "alpha_starts", at: 1000, owner: CONCURRENT_A, event: ["agent_start", {}], expectedCurrent: CONCURRENT_A.sessionId },
+  { label: "beta_starts_inside_active_protection", at: 1200, owner: CONCURRENT_B, event: ["agent_start", {}], expectedCurrent: CONCURRENT_A.sessionId },
+  { label: "alpha_tool_start", at: 1400, owner: CONCURRENT_A, event: ["tool_execution_start", { toolName: "read" }], expectedCurrent: CONCURRENT_A.sessionId },
+  { label: "beta_progress_still_protected", at: 2000, owner: CONCURRENT_B, event: ["agent_start", {}], expectedCurrent: CONCURRENT_A.sessionId },
+  { label: "alpha_short_feedback", at: 2200, owner: CONCURRENT_A, event: ["tool_execution_end", { toolName: "read" }], expectedCurrent: CONCURRENT_A.sessionId },
+  { label: "beta_progress_before_protection_expires", at: 3000, owner: CONCURRENT_B, event: ["agent_start", {}], expectedCurrent: CONCURRENT_A.sessionId },
+  { label: "beta_overtakes_after_protection", at: 33100, owner: CONCURRENT_B, event: ["agent_start", {}], expectedCurrent: CONCURRENT_B.sessionId },
+  { label: "alpha_cannot_steal_back_inside_protection", at: 34000, owner: CONCURRENT_A, event: ["agent_start", {}], expectedCurrent: CONCURRENT_B.sessionId },
+  { label: "alpha_returns_after_protection_and_margin", at: 66000, owner: CONCURRENT_A, event: ["agent_start", {}], expectedCurrent: CONCURRENT_A.sessionId },
+];
+
+export const CONCURRENT_EXPECTATIONS = Object.freeze(CONCURRENT_SEQUENCE.map((step) => Object.freeze({
+  label: step.label,
+  at: step.at,
+  current: step.expectedCurrent,
+})));
+
+export function buildConcurrentSteps() {
+  let snapshot = createSnapshot();
+  return CONCURRENT_SEQUENCE.map((step) => {
+    snapshot = applyEvent(snapshot, step.owner, {
+      type: step.event[0],
+      sessionPath: "private-session-path",
+      prompt: "private-prompt-body",
+      message: { content: "private-message-body" },
+      args: { token: "private-args-token" },
+      result: { content: "private-result-body" },
+      ...step.event[1],
+    }, step.at);
+    return {
+      label: step.label,
+      at: step.at,
+      owner: step.owner.sessionId,
+      expectation: { current: step.expectedCurrent },
+      dto: toPetSnapshot(snapshot, step.at),
+    };
+  });
 }
 
 const outFlag = process.argv.indexOf("--out");

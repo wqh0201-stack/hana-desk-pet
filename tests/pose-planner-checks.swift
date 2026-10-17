@@ -9,6 +9,7 @@ private struct PosePlannerChecks {
         try checkStatusMapping()
         try checkToolNameClassification()
         try checkPoseResolution()
+        try checkWorkRhythmCandidates()
         try checkBundledCatalog()
         print("PosePlannerChecks: \(checks) checks passed")
     }
@@ -205,6 +206,50 @@ private struct PosePlannerChecks {
             expect(fallback == expectedFallback, "\(roleID): missing \(mood.rawValue) art follows its safe fallback chain")
             expect(withoutMoodArt.contains(fallback), "\(roleID): missing \(mood.rawValue) art still resolves within its own catalog")
         }
+    }
+
+    private static func checkWorkRhythmCandidates() throws {
+        let root = CommandLine.arguments.dropFirst().first ?? "assets/crosspet"
+        let catalog = try PetArtworkCatalog(directoryURL: URL(fileURLWithPath: root, isDirectory: true))
+        let expectedVariant = [
+            "claude": "thinking-2",
+            "gpt": "thinking",
+            "deepseek": "deepthink",
+            "gemini": "thinking",
+            "glm": "thinking",
+            "deepseek-hoodie": "deepthink",
+            "gpt-onesie": "thinking",
+        ]
+        for role in PetRole.builtIns {
+            let poses = catalog.poseNames(forCharacterID: role.id)
+            guard let set = PetPosePlanner.workPoseSet(characterID: role.id, availablePoseNames: poses) else {
+                fatalError("CHECK FAILED: \(role.id) has no ordinary-work candidates")
+            }
+            expect(set.thinking == "thinking" && set.busyLeft == "busy_left" && set.busyRight == "busy_right",
+                   "\(role.id) uses the generic work poses")
+            expect(set.thinkingVariant == expectedVariant[role.id], "\(role.id) uses its own thinking variant")
+            expect(set.distinctPoses.allSatisfy { poses.contains($0) }, "\(role.id) candidates stay inside its catalog")
+            expect(PetWorkPoseScheduler.phases(for: set).count == 4, "\(role.id) has four distinct rhythm stages")
+        }
+
+        // Missing-artwork branches never fall outside the character's own list.
+        expect(PetPosePlanner.workPoseSet(characterID: "claude", availablePoseNames: []) == nil,
+               "an empty catalog yields no rhythm")
+        expect(PetPosePlanner.workPoseSet(characterID: "claude", availablePoseNames: ["idle", "thinking"]) == nil,
+               "one usable work pose yields no rhythm")
+        let variantless = PetPosePlanner.workPoseSet(
+            characterID: "claude",
+            availablePoseNames: ["idle", "thinking", "busy_left", "busy_right"]
+        )
+        expect(variantless?.thinkingVariant == "thinking", "a missing variant falls back to base thinking")
+        expect(Set(PetWorkPoseScheduler.phases(for: variantless!).map(\.pose)) == ["thinking", "busy_left", "busy_right"],
+               "a variant that would repeat base thinking does not create a duplicate stage")
+        let partial = PetPosePlanner.workPoseSet(characterID: "deepseek", availablePoseNames: ["idle", "thinking", "busy_right"])
+        expect(partial?.busyLeft == "thinking" && partial?.supportsRhythm == true,
+               "a partial catalog collapses missing stages onto base thinking instead of borrowing another role")
+        expect(PetPosePlanner.workThinkingVariant(for: "claude") == "thinking-2" &&
+               PetPosePlanner.workThinkingVariant(for: "deepseek") == "deepthink",
+               "variant mapping is per character and never cross-character")
     }
 
     private static func expect(_ condition: @autoclosure () -> Bool, _ message: String) {
