@@ -1,0 +1,32 @@
+{
+  "manifestVersion": 2,
+  "id": "hana-desktop-pet",
+  "name": "Hana 桌宠控制台",
+  "version": "0.5.5",
+  "entry": "index.js",
+  "icon": "assets/icon.png",
+  "minAppVersion": "1.1.7-beta",
+  "capabilities": [
+    "app/sessions.read"
+  ],
+  "network": {
+    "allowedHosts": ["127.0.0.1"],
+    "methods": ["GET", "POST"],
+    "allowLocalhost": true,
+    "defaultTimeoutMs": 1200,
+    "maxResponseBytes": 16384
+  },
+  "contributes": {
+    "cards": [
+      {
+        "id": "control",
+        "title": "桌宠控制台",
+        "description": "管理本机独立桌宠的手动角色、脱敏 Hana 会话状态与回环连接；不展示消息正文。",
+        "route": "/panel.html",
+        "face": {
+          "image": "assets/cover.png"
+        }
+      }
+    ]
+  }
+}

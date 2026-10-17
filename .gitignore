@@ -1,0 +1,17 @@
+# 构建与产物
+.build/
+pet-macos/.build/
+pet-macos/.swiftpm/
+dist/
+DerivedData/
+*.xcuserstate
+
+# 系统
+.DS_Store
+
+# 内部工作文档，不随 demo 发布
+AGENTS.md
+任务书.md
+并行精进计划.md
+下一阶段桥接可行性.md
+upstream/

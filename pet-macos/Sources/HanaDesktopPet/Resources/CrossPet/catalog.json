@@ -1,0 +1,108 @@
+{
+  "schemaVersion": 1,
+  "collection": "CrossPet original character pose assets",
+  "purpose": "Local non-commercial Hana Desk Pet prototype runtime integration only; not for distribution.",
+  "upstream": {
+    "repository": "https://github.com/lokicorvus/crosspet",
+    "version": "1.3.6",
+    "commit": "18e924659c665eb6fcfcf5e161a81a75203af0ae",
+    "commitDate": "2026-10-16T05:39:05Z",
+    "characterLicense": "CC BY-NC-SA 4.0",
+    "licenseFile": "CHARACTERS-LICENSE.md",
+    "licenseSource": "characters/LICENSE.md",
+    "codeLicenseNote": "The upstream root MIT license expressly covers source code only; it does not cover these character images."
+  },
+  "assetHandling": {
+    "downloadedFrom": "https://raw.githubusercontent.com/lokicorvus/crosspet/18e924659c665eb6fcfcf5e161a81a75203af0ae/characters/",
+    "format": "Original WebP files, unchanged byte-for-byte; no crop, redraw, recolor, recompression, or sprite-sheet conversion.",
+    "excluded": [
+      "Upstream character.json files (including lines and app bindings)",
+      "Generation prompts, source code, integrations, Easter-egg characters, greetings, and seasonal poses",
+      "Pose files not listed under an item below"
+    ],
+    "runtimeIntegration": true,
+    "publicationAllowed": false,
+    "commercialUseAllowed": false
+  },
+  "characters": [
+    {
+      "id": "claude",
+      "name": "Claude",
+      "kind": "base-character",
+      "upstreamDirectory": "characters/claude",
+      "assetDirectory": "claude",
+      "designCredit": "CrossPet's AI-generated rendition of the community-popular Claude-girl design (copper/orange hair, orange-flower ornament, book). Upstream does not identify an individual illustrator or the original design author; its license lists ai-school-op and openpet-ai-girls as references, not as a verified direct source for this exact image.",
+      "poseFiles": [
+        "asking.webp", "busy_left.webp", "busy_right.webp", "clawd.webp", "compact.webp", "delegating.webp", "happy-2.webp", "idle-2.webp", "idle-3.webp", "idle-blink.webp", "idle.webp", "listening.webp", "oops.webp", "proud.webp", "reading-2.webp", "running.webp", "searching.webp", "sleeping-2.webp", "sorry.webp", "surprised.webp", "swamped_left.webp", "swamped_right.webp", "thinking-2.webp", "thinking.webp", "tired.webp", "writing.webp"
+      ]
+    },
+    {
+      "id": "gpt",
+      "name": "GPT / white dragon",
+      "kind": "base-character",
+      "upstreamDirectory": "characters/gpt",
+      "assetDirectory": "gpt",
+      "designCredit": "CrossPet's AI-generated rendition of the community design '御姐白龙', credited upstream to ZipZipPipe on Bilibili; the individual source post URL is not listed in the license.",
+      "poseFiles": [
+        "asking.webp", "busy_left.webp", "busy_right.webp", "compact.webp", "delegating.webp", "drawing.webp", "happy.webp", "idle-2.webp", "idle-3.webp", "idle-blink.webp", "idle.webp", "listening.webp", "oops.webp", "proud.webp", "reading.webp", "reset.webp", "reset_bell.webp", "reset_check.webp", "reset_hope.webp", "reset_maybe.webp", "reset_nope.webp", "running.webp", "searching.webp", "sleeping.webp", "surprised.webp", "swamped_left.webp", "swamped_right.webp", "thinking.webp", "tired.webp", "writing.webp"
+      ]
+    },
+    {
+      "id": "deepseek",
+      "name": "DeepSeek / 大肥鱼",
+      "kind": "base-character",
+      "upstreamDirectory": "characters/deepseek",
+      "assetDirectory": "deepseek",
+      "designCredit": "CrossPet's AI-generated rendition. Upstream credits the '溟月' prototype to 上善无形 (2025-06, CC BY-NC-SA 4.0) and the deep-blue maid whale-girl / '大肥鱼' design to ZipZipPipe on Bilibili; no exact source post URL is listed.",
+      "poseFiles": [
+        "asking.webp", "busy_left.webp", "busy_right.webp", "compact.webp", "deepthink.webp", "delegating.webp", "drawing.webp", "eat.webp", "feast.webp", "happy.webp", "idle-2.webp", "idle-3.webp", "idle-blink.webp", "idle.webp", "listening.webp", "oops.webp", "proud.webp", "reading.webp", "running.webp", "searching.webp", "slack.webp", "sleeping.webp", "surprised.webp", "swamped_left.webp", "swamped_right.webp", "swim.webp", "thinking.webp", "tired.webp", "writing.webp"
+      ]
+    },
+    {
+      "id": "gemini",
+      "name": "Gemini",
+      "kind": "base-character",
+      "upstreamDirectory": "characters/gemini",
+      "assetDirectory": "gemini",
+      "designCredit": "CrossPet's AI-generated rendition of a community-popular Gemini-girl design (cat ears, heterochromia, four-point-star ornament). Upstream does not name an individual original author or illustrator; ai-school-op and openpet-ai-girls are listed as references, not as verified direct sources for this exact image.",
+      "poseFiles": [
+        "asking.webp", "busy_left.webp", "busy_right.webp", "compact.webp", "delegating.webp", "drawing.webp", "float.webp", "happy.webp", "idle-2.webp", "idle-3.webp", "idle.webp", "listening.webp", "oops.webp", "proud.webp", "reading.webp", "running.webp", "searching.webp", "sleeping.webp", "surprised.webp", "swamped_left.webp", "swamped_right.webp", "thinking.webp", "tired.webp", "writing.webp"
+      ]
+    },
+    {
+      "id": "glm",
+      "name": "GLM / black fox maid",
+      "kind": "base-character",
+      "upstreamDirectory": "characters/glm",
+      "assetDirectory": "glm",
+      "designCredit": "CrossPet original character design ('心机涨价狐'); the upstream README describes the setting as CrossPet-original and does not identify a separate individual illustrator. Artwork is described upstream as AI-generated.",
+      "poseFiles": [
+        "asking.webp", "busy_left.webp", "busy_right.webp", "compact.webp", "delegating.webp", "drawing.webp", "happy.webp", "idle-2.webp", "idle-3.webp", "idle-blink.webp", "idle.webp", "listening.webp", "masked.webp", "oops.webp", "pricetag.webp", "proud.webp", "reading.webp", "running.webp", "searching.webp", "sleeping.webp", "soldout.webp", "surprised.webp", "swamped_left.webp", "swamped_right.webp", "thinking.webp", "tired.webp", "writing.webp"
+      ]
+    },
+    {
+      "id": "deepseek-hoodie",
+      "name": "DeepSeek · Claude hoodie",
+      "kind": "skin",
+      "skinOf": "deepseek",
+      "upstreamDirectory": "characters/deepseek-hoodie",
+      "assetDirectory": "deepseek-hoodie",
+      "designCredit": "CrossPet-created derivative outfit based on the DeepSeek / 大肥鱼 character, credited as such in the upstream README and covered by the same CC BY-NC-SA 4.0 character license.",
+      "poseFiles": [
+        "asking.webp", "busy_left.webp", "busy_right.webp", "compact.webp", "deepthink.webp", "delegating.webp", "drawing.webp", "eat.webp", "feast.webp", "happy.webp", "idle-blink.webp", "idle.webp", "listening.webp", "oops.webp", "proud.webp", "reading.webp", "running.webp", "searching.webp", "slack.webp", "sleeping.webp", "surprised.webp", "swamped_left.webp", "swamped_right.webp", "swim.webp", "thinking.webp", "tired.webp", "writing.webp"
+      ]
+    },
+    {
+      "id": "gpt-onesie",
+      "name": "GPT · 降智龙崽",
+      "kind": "skin",
+      "skinOf": "gpt",
+      "upstreamDirectory": "characters/gpt-onesie",
+      "assetDirectory": "gpt-onesie",
+      "designCredit": "CrossPet-created derivative outfit based on the GPT white-dragon character; the underlying '御姐白龙' design is credited upstream to ZipZipPipe on Bilibili. Both outfit and base art are covered by the character CC BY-NC-SA 4.0 license.",
+      "poseFiles": [
+        "asking.webp", "busy_left.webp", "busy_right.webp", "compact.webp", "delegating.webp", "drawing.webp", "happy.webp", "idle-2.webp", "idle-3.webp", "idle-blink.webp", "idle.webp", "listening.webp", "oops.webp", "proud.webp", "reading.webp", "reset.webp", "reset_bell.webp", "reset_check.webp", "reset_hope.webp", "reset_maybe.webp", "reset_nope.webp", "running.webp", "searching.webp", "sleeping.webp", "surprised.webp", "swamped_left.webp", "swamped_right.webp", "thinking.webp", "tired.webp", "writing.webp"
+      ]
+    }
+  ]
+}

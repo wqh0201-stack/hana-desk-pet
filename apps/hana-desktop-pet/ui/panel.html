@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>Hana 桌宠控制台</title>
+  <link rel="stylesheet" href="./assets/panel.css">
+</head>
+<body>
+  <main>
+    <header class="heading">
+      <h1>桌宠控制台</h1>
+      <p>宠物在独立的 macOS 窗口中运行；这里管理角色、会话元数据和本机连接。</p>
+    </header>
+
+    <section class="bridge" aria-labelledby="bridge-title">
+      <div class="bridge-copy">
+        <h2 id="bridge-title">本机桌宠连接</h2>
+        <p id="bridge-help">默认关闭。启用后，只向 127.0.0.1 的宠物进程发送脱敏状态。</p>
+      </div>
+      <div class="bridge-controls">
+        <span id="bridge-state" class="connection-state" aria-live="polite">未启用</span>
+        <label class="toggle">
+          <input id="bridge-toggle" type="checkbox" aria-describedby="bridge-help">
+          <span>启用</span>
+        </label>
+      </div>
+    </section>
+
+    <section class="roles" aria-labelledby="roles-title">
+      <div class="section-heading">
+        <h2 id="roles-title">手动角色</h2>
+        <span>会话事件不会改角色</span>
+      </div>
+      <div id="role-options" class="role-options" role="group" aria-label="选择桌宠角色"></div>
+    </section>
+
+    <section class="activity" aria-labelledby="activity-title" aria-live="polite" aria-atomic="true">
+      <div class="section-heading">
+        <h2 id="activity-title">最近活动</h2>
+        <span id="activity-status" class="status-pill idle">等待事件</span>
+      </div>
+      <h3 id="session-title">暂无活动会话</h3>
+      <div class="metadata">
+        <span id="agent">Agent：—</span>
+        <span id="tool">工具：—</span>
+        <span id="activity-hint" class="hint-pill" data-hint="none" aria-live="polite"></span>
+      </div>
+      <p id="updated" class="updated">尚未收到公开会话事件</p>
+    </section>
+
+    <section class="follow" aria-labelledby="follow-title">
+      <div class="section-heading">
+        <h2 id="follow-title">跟随的会话</h2>
+        <span id="follow-mode" class="follow-mode">跟随最近活动</span>
+      </div>
+      <p id="follow-note" class="follow-note" aria-live="polite">桌宠当前跟随最近有活动的会话。</p>
+      <p id="session-status" class="session-status" aria-live="polite"></p>
+      <div class="select-row">
+        <label class="select-label" for="follow-select">钉住会话</label>
+        <select id="follow-select" aria-describedby="follow-help"></select>
+      </div>
+      <p id="follow-help" class="follow-help">
+        只保存会话 ID、标题与 Agent 名称。钉住后桌宠只跟随该会话；它关闭或归档后会自动回到跟随最近活动。
+      </p>
+    </section>
+
+    <section class="recent" aria-labelledby="recent-title">
+      <h2 id="recent-title">会话列表</h2>
+      <ol id="sessions" class="sessions">
+        <li class="empty">等待公开会话事件</li>
+      </ol>
+    </section>
+
+    <footer>只处理会话标题、Agent、工具名、状态与时间戳；不读取或转发聊天正文、工具参数和结果。</footer>
+  </main>
+  <script type="module" src="./assets/panel.js"></script>
+</body>
+</html>
