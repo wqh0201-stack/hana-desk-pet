@@ -11,6 +11,8 @@ const FOLLOW_REQUEST_KEY = "hana-pet.follow.request";
 const SESSION_DIAGNOSTICS_KEY = "hana-pet.session-diagnostics";
 const LATEST_VALUE = "";
 const HOLD_MS = 2500;
+/** 与 .sessions 的 gap 保持一致，用于把列表高度对齐到整行。 */
+const SESSION_ROW_GAP = 4;
 const FOLLOW_OPTION_MAX = 15;
 const POSE_SCHEMA_VERSION = 3;
 const BRIDGE_REASONS = new Set(["unreachable", "version_mismatch", "invalid_response"]);
@@ -59,6 +61,7 @@ const nodes = {
   status: document.getElementById("activity-status"),
   updated: document.getElementById("updated"),
   sessions: document.getElementById("sessions"),
+  sessionsTitle: document.getElementById("sessions-title"),
   followSelect: document.getElementById("follow-select"),
   sessionStatus: document.getElementById("session-status"),
   hint: document.getElementById("activity-hint"),
@@ -96,6 +99,89 @@ let followSelectDeferred = null;
 let followSelectOpen = false;
 let selectionWriteToken = 0;
 let noticeTimer = null;
+let sessionSnapKey = "";
+let resizeTimer = null;
+
+const HOST_THEME_STYLE_ATTRIBUTE = "data-hana-theme-style";
+let themeCssRequestId = 0;
+let activeThemeCssUrl = null;
+let appSetThemeAppearance = false;
+
+function resolveThemeAppearance(themeSnapshot) {
+  if (themeSnapshot?.appearance === "light" || themeSnapshot?.appearance === "dark") {
+    return themeSnapshot.appearance;
+  }
+  const rootAppearance = document.documentElement.dataset.appearance;
+  if (rootAppearance === "light" || rootAppearance === "dark") return rootAppearance;
+  return window.matchMedia?.("(prefers-color-scheme: dark)")?.matches ? "dark" : "light";
+}
+
+function resolveThemeCssUrl(themeSnapshot) {
+  if (typeof themeSnapshot?.cssUrl === "string" && themeSnapshot.cssUrl.trim()) {
+    return themeSnapshot.cssUrl;
+  }
+  const palette = themeSnapshot?.palettes?.[resolveThemeAppearance(themeSnapshot)];
+  return typeof palette?.cssUrl === "string" && palette.cssUrl.trim() ? palette.cssUrl : null;
+}
+
+function syncThemeAppearance(themeSnapshot) {
+  const root = document.documentElement;
+  const appearance = themeSnapshot?.appearance;
+  if (appearance === "light" || appearance === "dark") {
+    root.dataset.appearance = appearance;
+    appSetThemeAppearance = true;
+  } else if (appSetThemeAppearance) {
+    delete root.dataset.appearance;
+    appSetThemeAppearance = false;
+  }
+}
+
+async function applyHostThemeStylesheet(cssUrl, requestId) {
+  try {
+    const response = await window.fetch(cssUrl, { credentials: "same-origin" });
+    if (!response.ok) throw new Error("Theme stylesheet request failed");
+    const cssText = await response.text();
+    if (requestId !== themeCssRequestId) return;
+
+    let style = document.querySelector(`style[${HOST_THEME_STYLE_ATTRIBUTE}]`);
+    if (!style) {
+      style = document.createElement("style");
+      style.setAttribute(HOST_THEME_STYLE_ATTRIBUTE, "");
+    }
+    style.textContent = cssText;
+    document.head.appendChild(style);
+  } catch (error) {
+    if (requestId !== themeCssRequestId) return;
+    console.warn("Hana 桌宠面板无法读取宿主主题样式；将使用本地 fallback。", error?.name ?? "unknown");
+  }
+}
+
+function initializeHostTheme() {
+  if (!hana.theme?.getSnapshot || !hana.theme?.subscribe) return () => {};
+
+  const initialSnapshot = hana.theme.getSnapshot();
+  syncThemeAppearance(initialSnapshot);
+  activeThemeCssUrl = resolveThemeCssUrl(initialSnapshot);
+  if (activeThemeCssUrl && !document.querySelector(`style[${HOST_THEME_STYLE_ATTRIBUTE}]`)) {
+    const requestId = ++themeCssRequestId;
+    void applyHostThemeStylesheet(activeThemeCssUrl, requestId);
+  }
+
+  return hana.theme.subscribe((themeSnapshot) => {
+    syncThemeAppearance(themeSnapshot);
+    const cssUrl = resolveThemeCssUrl(themeSnapshot);
+    if (cssUrl === activeThemeCssUrl) return;
+    activeThemeCssUrl = cssUrl;
+    const requestId = ++themeCssRequestId;
+    if (!cssUrl) return;
+
+    // cssUrl 变更时 SDK 会跟随 hana.theme.changed；成对 palette URL 则需由面板按 appearance 选取。
+    if (typeof themeSnapshot?.cssUrl === "string" && themeSnapshot.cssUrl.trim()) return;
+    void applyHostThemeStylesheet(cssUrl, requestId);
+  });
+}
+
+const stopTheme = initializeHostTheme();
 
 async function readStorage(key) {
   const result = await hana.storage.global.get(key);
@@ -418,6 +504,7 @@ function renderSessions(currentId, followedId) {
     listRowTitle(a).localeCompare(listRowTitle(b)));
 
   if (!rows.length) {
+    nodes.sessionsTitle.textContent = "会话";
     const empty = document.createElement("li");
     empty.className = "empty";
     empty.textContent = diagnostics?.list
@@ -428,6 +515,7 @@ function renderSessions(currentId, followedId) {
   }
   const list = document.createDocumentFragment();
   for (const item of rows) list.append(buildSessionRow(item, currentId, followedId));
+  nodes.sessionsTitle.textContent = `会话 · ${rows.length}`;
   nodes.sessions.replaceChildren(list);
 }
 
@@ -458,6 +546,58 @@ function renderDiagnostics() {
   }
   nodes.diagError.textContent = recentError ?? "无";
   nodes.diagError.dataset.state = recentError ? "error" : "ok";
+}
+
+/**
+ * 会话列表占据面板剩余高度，但高度只取整行：被窗口切掉的半行看起来像渲染坏了。
+ * 行数不够填满时（高窗口）面板改成内容高，避免卡片底部留一大块空白。
+ */
+function availableListHeight() {
+  const panel = nodes.sessions.parentElement;
+  const controller = panel.parentElement;
+  const style = getComputedStyle(controller);
+  const gap = parseFloat(style.rowGap) || 0;
+  const padding = (parseFloat(style.paddingTop) || 0) + (parseFloat(style.paddingBottom) || 0);
+  const children = [...controller.children].filter((el) => el.getClientRects().length > 0);
+  const others = children
+    .filter((el) => el !== panel)
+    .reduce((sum, el) => sum + el.getBoundingClientRect().height, 0);
+  const chrome = panel.offsetHeight - nodes.sessions.offsetHeight;
+  return controller.clientHeight - padding - gap * Math.max(0, children.length - 1) - others - chrome;
+}
+
+function syncSessionListHeight() {
+  const list = nodes.sessions;
+  // 面板冒烟测试用最小 DOM stub 跑模块体，没有布局 API 时直接跳过测量。
+  if (typeof list.querySelector !== "function" || typeof list.getBoundingClientRect !== "function" ||
+      typeof getComputedStyle !== "function") return;
+  const panel = list.parentElement;
+  if (!panel || typeof panel.getBoundingClientRect !== "function") return;
+  const first = list.querySelector(".session");
+  if (!first) {
+    sessionSnapKey = "";
+    if (list.style.maxHeight) list.style.maxHeight = "";
+    panel.classList.remove("is-compact");
+    return;
+  }
+  const rowHeight = first.getBoundingClientRect().height + SESSION_ROW_GAP;
+  if (!(rowHeight > SESSION_ROW_GAP)) return;
+  const key = `${list.childElementCount}|${Math.round(rowHeight)}|${panel.clientHeight}|${panel.clientWidth}`;
+  if (key === sessionSnapKey) return;
+  sessionSnapKey = key;
+  const available = availableListHeight();
+  if (!(available > rowHeight)) {
+    list.style.maxHeight = "";
+    return;
+  }
+  const fit = Math.max(1, Math.floor((available + SESSION_ROW_GAP) / rowHeight));
+  if (list.childElementCount <= fit) {
+    panel.classList.add("is-compact");
+    list.style.maxHeight = "";
+    return;
+  }
+  panel.classList.remove("is-compact");
+  list.style.maxHeight = `${Math.round(fit * rowHeight - SESSION_ROW_GAP)}px`;
 }
 
 function render() {
@@ -500,6 +640,7 @@ function render() {
   renderPetPose();
   renderFollowReleaseNotice();
   renderSessions(snapshot?.current?.sessionId ?? null, followedId);
+  syncSessionListHeight();
   renderDiagnostics();
   renderLegacyFollowOptions();
   renderLegacySessionDiagnostics();
@@ -636,9 +777,27 @@ const stop = hana.storage.global.onChanged((keys) => {
 const ticker = window.setInterval(() => {
   if (snapshot) render();
 }, 1000);
+// 展开诊断、出现提示条或窗口尺寸变化都会改变列表可用高度，重算一次整行对齐。
+if (typeof ResizeObserver === "function") {
+  const sessionPanel = nodes.sessions.parentElement;
+  new ResizeObserver(() => {
+    sessionSnapKey = "";
+    syncSessionListHeight();
+  }).observe(sessionPanel);
+}
+window.addEventListener("resize", () => {
+  if (resizeTimer !== null) window.clearTimeout(resizeTimer);
+  resizeTimer = window.setTimeout(() => {
+    resizeTimer = null;
+    sessionSnapKey = "";
+    syncSessionListHeight();
+  }, 120);
+});
 window.addEventListener("pagehide", () => {
   stop();
+  stopTheme();
   window.clearInterval(ticker);
   if (noticeTimer !== null) window.clearTimeout(noticeTimer);
+  if (resizeTimer !== null) window.clearTimeout(resizeTimer);
 }, { once: true });
 void refresh();

@@ -27,16 +27,18 @@
           <img id="stage-image" src="./assets/poses/claude/idle.webp" width="150" height="168" alt="Claude idle 立绘，桌宠未连接">
           <span id="pose-fallback" class="pose-fallback" hidden>替代</span>
         </div>
-        <div class="pose-caption">
-          <span id="pose-connection">桌宠未连接</span>
-          <span id="pose-name">idle</span>
-        </div>
       </div>
       <div class="stage-copy">
-        <h1 id="session-title">暂无活动会话</h1>
+        <div class="stage-head">
+          <h1 id="session-title">暂无活动会话</h1>
+          <span id="activity-status" class="status-pill idle" aria-live="polite">空闲</span>
+        </div>
         <p id="agent" class="stage-agent">Agent 未知 · —</p>
-        <p class="state-line"><span>会话状态</span><strong id="activity-status" class="status-pill idle" aria-live="polite">空闲</strong></p>
         <p id="updated" class="stage-updated">尚未收到公开会话事件</p>
+        <p class="pose-caption">
+          <span id="pose-connection">桌宠未连接</span>
+          <span id="pose-name">idle</span>
+        </p>
       </div>
     </section>
 

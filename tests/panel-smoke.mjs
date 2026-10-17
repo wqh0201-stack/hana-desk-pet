@@ -33,6 +33,12 @@ const store = {
 };
 
 const made = [];
+let themeSnapshot = {
+  theme: "warm-paper", appearance: "light",
+  ...(process.env.PANEL_THEME_INITIAL_CSS ? { cssUrl: process.env.PANEL_THEME_INITIAL_CSS } : {}),
+};
+let themeSubscriber = null;
+const themeFetches = [];
 function el(tag = "div") {
   const node = {
     tagName: tag, children: [], _text: "", value: "", checked: false, disabled: false,
@@ -54,9 +60,17 @@ function el(tag = "div") {
 }
 const byId = new Map();
 const document = {
+  documentElement: el("html"),
+  head: el("head"),
   getElementById(id) { if (!byId.has(id)) byId.set(id, el()); return byId.get(id); },
   createElement: (t) => el(t),
   createDocumentFragment: () => el("fragment"),
+  querySelector(selector) {
+    if (selector === "style[data-hana-theme-style]") {
+      return this.head.children.find((node) => Object.hasOwn(node.attributes, "data-hana-theme-style")) ?? null;
+    }
+    return null;
+  },
 };
 let storageChange = null;
 const failWrites = new Set();
@@ -66,6 +80,12 @@ const sandbox = {
     setInterval: () => 1, clearInterval() {},
     setTimeout: () => 1, clearTimeout() {},
     addEventListener() {},
+    matchMedia: () => ({ matches: false }),
+    async fetch(url, options) {
+      themeFetches.push({ url, options });
+      const bg = String(url).endsWith("dark.css") ? "#14242d" : "#F8F4ED";
+      return { ok: true, async text() { return `:root{--bg:${bg}}`; } };
+    },
   },
   console,
   Date, Math, Number, JSON, Array, Object, String, Set, Map, Promise, isFinite,
@@ -74,6 +94,14 @@ sandbox.globalThis = sandbox;
 
 const hanaStub = {
   ready() {},
+  theme: {
+    getSnapshot() { return { ...themeSnapshot }; },
+    subscribe(callback) {
+      themeSubscriber = callback;
+      callback({ ...themeSnapshot });
+      return () => { themeSubscriber = null; };
+    },
+  },
   storage: {
     global: {
       async get(key) { return store[key]; },
@@ -204,11 +232,38 @@ await new Promise((r) => setTimeout(r, 30));
 if (byId.get("bridge-state").textContent !== "连接已关闭" ||
     byId.get("bridge-toggle").checked !== false) ok = false;
 
+assert.equal(document.documentElement.dataset.appearance, "light",
+  "initial host appearance is reflected on the document root");
+assert.equal(themeFetches.length, themeSnapshot.cssUrl ? 1 : 0,
+  "an initial host CSS URL is fetched once; a missing URL leaves the local fallback in place");
+if (themeSnapshot.cssUrl) {
+  assert.equal(themeFetches[0].url, themeSnapshot.cssUrl);
+  assert.match(document.querySelector("style[data-hana-theme-style]")?.textContent ?? "", /--bg:#F8F4ED/);
+}
+const palettePair = {
+  light: { theme: "paper", cssUrl: "https://theme.invalid/light.css" },
+  dark: { theme: "slate", cssUrl: "https://theme.invalid/dark.css" },
+};
+themeSubscriber?.({ theme: "slate", appearance: "dark", palettes: palettePair });
+await new Promise((r) => setTimeout(r, 10));
+let themeStyle = document.querySelector("style[data-hana-theme-style]");
+assert.equal(document.documentElement.dataset.appearance, "dark");
+assert.equal(themeFetches.at(-1)?.url, palettePair.dark.cssUrl,
+  "palette-only theme snapshots select the CSS matching appearance");
+assert.equal(themeFetches.at(-1)?.options?.credentials, "same-origin");
+assert.match(themeStyle?.textContent ?? "", /--bg:#14242d/);
+themeSubscriber?.({ theme: "paper", appearance: "light", palettes: palettePair });
+await new Promise((r) => setTimeout(r, 10));
+themeStyle = document.querySelector("style[data-hana-theme-style]");
+assert.equal(document.documentElement.dataset.appearance, "light");
+assert.equal(themeFetches.at(-1)?.url, palettePair.light.cssUrl);
+assert.match(themeStyle?.textContent ?? "", /--bg:#F8F4ED/);
+
 const panelCss = fs.readFileSync("apps/hana-desktop-pet/ui/assets/panel.css", "utf8");
 const stageRule = panelCss.match(/\.stage\s*\{([^}]*)\}/)?.[1] ?? "";
 const narrowStageRule = panelCss.match(/@media\s*\(max-width:\s*390px\)[\s\S]*?\.stage\s*\{([^}]*)\}/)?.[1] ?? "";
 assert.match(stageRule, /display:\s*grid;/, "stage uses a bounded grid");
-assert.match(stageRule, /grid-template-columns:\s*150px\s+minmax\(0,\s*1fr\);/);
+assert.match(stageRule, /grid-template-columns:\s*128px\s+minmax\(0,\s*1fr\);/);
 assert.match(stageRule, /overflow:\s*hidden;/, "stage clips paint to its border");
 assert.match(narrowStageRule, /grid-template-columns:\s*minmax\(0,\s*1fr\);/, "narrow stage stacks vertically");
 assert.match(panelCss, /(?:^|\n)img\s*\{\s*max-width:\s*100%;\s*height:\s*auto;\s*\}/m, "all images have a responsive width cap");
@@ -222,9 +277,14 @@ for (const [bridge, host, fallback] of [
     `host ${host} must win over the ${fallback} fallback`);
 }
 assert.match(panelCss, /@media\s*\(prefers-color-scheme:\s*dark\)/, "system dark fallback exists");
-assert.match(panelCss, /:root\[data-appearance=\"dark\"\]\s*\{\s*--hk-on-accent:/,
-  "host appearance controls text on the accent color");
-
+assert.match(panelCss, /--hk-accent-readable:\s*color-mix\(in srgb, var\(--hk-accent\) 74%, var\(--hk-text\)\)/,
+  "accent text is derived for readable contrast");
+assert.match(panelCss, /--hk-accent-fill:\s*color-mix\(in srgb, var\(--hk-accent\) 90%, var\(--hk-text\)\)/,
+  "accent fills preserve contrast for foreground text");
+assert.match(panelCss, /:root\[data-appearance="dark"\]\s*\{\s*color-scheme:\s*dark;/,
+  "host appearance controls native dark controls and accent foreground");
+assert.match(panelCss, /:root\[data-appearance="light"\]\s*\{\s*color-scheme:\s*light;/,
+  "host appearance controls native light controls");
 const componentCss = panelCss
   .replace(/:root\s*\{[^{}]*\}/g, "")
   .replace(/:root\[data-appearance=\"(?:dark|light)\"\]\s*\{[^{}]*\}/g, "");
@@ -245,13 +305,28 @@ function contrastRatio(left, right) {
   const a = luminance(left), b = luminance(right);
   return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
 }
+function mixSrgbHex(left, right, leftShare) {
+  const leftChannels = left.slice(1).match(/../g).map((value) => parseInt(value, 16));
+  const rightChannels = right.slice(1).match(/../g).map((value) => parseInt(value, 16));
+  return `#${leftChannels.map((value, index) =>
+    Math.round(value * leftShare + rightChannels[index] * (1 - leftShare)).toString(16).padStart(2, "0"))
+    .join("")}`;
+}
 const lightRoot = panelCss.match(/:root\s*\{([^{}]*)\}/)?.[1] ?? "";
 const darkRoot = panelCss.match(/@media\s*\(prefers-color-scheme:\s*dark\)\s*\{\s*:root\s*\{([^{}]*)\}/)?.[1] ?? "";
+const lightPalette = fallbackTokens(lightRoot);
+for (const [key, value] of Object.entries({
+  bg: "#F8F4ED", surface: "#FCFAF5", text: "#3B3D3F", muted: "#6B6158", accent: "#537D96",
+  "success-text": "#48664A", "warning-text": "#6F531F", "error-text": "#854747",
+})) assert.equal(lightPalette[key], value, `warm-paper fallback ${key}`);
+assert.match(lightRoot, /--fallback-border:\s*rgba\(122,\s*96,\s*88,\s*0\.18\)/i);
+const slatePalette = fallbackTokens(darkRoot);
+assert.equal(slatePalette.bg, "#14242d", "deep-slate fallback is preserved");
 for (const [name, block] of [["light", lightRoot], ["dark", darkRoot]]) {
   const p = fallbackTokens(block);
   for (const [fg, bg] of [
     ["text", "bg"], ["text", "surface"], ["muted", "bg"], ["muted", "surface"],
-    ["light", "bg"], ["light", "surface"], ["accent", "bg"], ["on-accent", "accent"],
+    ["light", "bg"], ["light", "surface"],
     ["neutral-text", "neutral-bg"], ["info-text", "info-bg"], ["success-text", "success-bg"],
     ["warning-text", "warning-bg"], ["error-text", "error-bg"],
     ["status-success", "bg"], ["status-warning", "bg"], ["status-error", "bg"],
@@ -259,6 +334,14 @@ for (const [name, block] of [["light", lightRoot], ["dark", darkRoot]]) {
     const ratio = contrastRatio(p[fg], p[bg]);
     assert.ok(ratio >= 4.5, `${name} ${fg} on ${bg} contrast is ${ratio.toFixed(2)}:1`);
   }
+  const accentReadable = mixSrgbHex(p.accent, p.text, 0.74);
+  const accentFill = mixSrgbHex(p.accent, p.text, 0.90);
+  const readableRatio = contrastRatio(accentReadable, p.surface);
+  const fillRatio = contrastRatio(p["on-accent"], accentFill);
+  assert.ok(readableRatio >= 4.5,
+    `${name} readable accent on surface contrast is ${readableRatio.toFixed(2)}:1`);
+  assert.ok(fillRatio >= 4.5,
+    `${name} on-accent on derived fill contrast is ${fillRatio.toFixed(2)}:1`);
 }
 console.log("PANEL_LAYOUT_THEME_CONTRACT_OK");
 console.log(ok ? "PANEL_SMOKE_OK" : "PANEL_SMOKE_FAIL");
