@@ -85,7 +85,16 @@ private struct PosePlannerChecks {
         expect(PetPosePlanner.resolvedPose(preferred: "searching", availablePoseNames: ["idle", "searching-3"]) == "searching-3", "-3 pose variant is supported")
         expect(PetPosePlanner.resolvedPose(preferred: "happy", availablePoseNames: ["idle", "happy-2"]) == "happy-2", "Claude happy-2 artwork resolves")
         expect(PetPosePlanner.resolvedPose(preferred: "idle-blink", availablePoseNames: ["idle", "idle-2"]) == "idle", "missing Gemini blink falls back to idle")
-        expect(PetPosePlanner.resolvedPose(preferred: "drawing", availablePoseNames: ["idle", "thinking", "busy_left"]) == "thinking", "missing specialized pose falls back to thinking")
+        let catalog = try PetArtworkCatalog(directoryURL: URL(fileURLWithPath: CommandLine.arguments.dropFirst().first ?? "assets/crosspet", isDirectory: true))
+        let claudePoses = catalog.poseNames(forCharacterID: "claude")
+        let otherRolesKeepDrawing = PetRole.builtIns.filter { $0.id != "claude" }.allSatisfy { role in
+            let poses = catalog.poseNames(forCharacterID: role.id)
+            return poses.contains("drawing") && PetPosePlanner.resolvedPose(preferred: "drawing", availablePoseNames: poses) == "drawing"
+        }
+        expect(PetPosePlanner.resolvedPose(preferred: "drawing", availablePoseNames: ["idle", "thinking", "busy_left"]) == "thinking" &&
+               PetPosePlanner.resolvedPose(preferred: "drawing", availablePoseNames: claudePoses) == "drawing" &&
+               otherRolesKeepDrawing,
+               "drawing keeps the thinking fallback when missing, while Claude and the other six roles resolve to drawing")
         expect(PetPosePlanner.resolvedPose(preferred: "writing", availablePoseNames: ["idle", "busy_left"]) == "busy_left", "busy fallback is used before idle")
         expect(PetPosePlanner.resolvedPose(preferred: "unknown", availablePoseNames: ["idle", "idle-2"]) == "idle", "unknown preferred pose ends at idle")
         expect(PetPosePlanner.resolvedPose(preferred: "reading", availablePoseNames: ["busy_right"]) == "busy_right", "malformed list still resolves to an available pose")
@@ -133,8 +142,12 @@ private struct PosePlannerChecks {
         let claude = catalog.poseNames(forCharacterID: "claude")
         expect(PetPosePlanner.resolvedPose(preferred: "happy", availablePoseNames: claude) == "happy-2", "Claude's actual catalog resolves happy-2")
         let gemini = catalog.poseNames(forCharacterID: "gemini")
-        expect(!gemini.contains("idle-blink"), "Gemini catalog has no blink frame")
-        expect(PetPosePlanner.resolvedPose(preferred: "idle-blink", availablePoseNames: gemini) == "idle", "Gemini blink request resolves safely")
+        expect(gemini.contains("idle-blink") && PetPosePlanner.resolvedPose(preferred: "idle-blink", availablePoseNames: gemini) == "idle-blink", "Gemini's generated blink pose resolves to idle-blink")
+        let hoodie = catalog.poseNames(forCharacterID: "deepseek-hoodie")
+        expect(hoodie.contains("idle-2") && hoodie.contains("idle-3") &&
+               PetPosePlanner.resolvedPose(preferred: "idle-2", availablePoseNames: hoodie) == "idle-2" &&
+               PetPosePlanner.resolvedPose(preferred: "idle-3", availablePoseNames: hoodie) == "idle-3",
+               "DeepSeek hoodie idle variants resolve to idle-2 and idle-3")
     }
 
     private static func checkHintPoseResolution(for roleID: String, available: [String]) {

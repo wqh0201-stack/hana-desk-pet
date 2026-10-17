@@ -7,7 +7,7 @@ PACKAGE_DIR="$PROJECT_ROOT/pet-macos"
 INFO_PLIST="$PACKAGE_DIR/Resources/Info.plist"
 DIST_DIR="$PROJECT_ROOT/dist"
 APP_NAME="HanaDesktopPet"
-APP_BUNDLE_NAME="$APP_NAME-crosspet-v0.5.4-local"
+APP_BUNDLE_NAME="$APP_NAME-crosspet-v0.5.5-local"
 APP_BUNDLE="$DIST_DIR/$APP_BUNDLE_NAME.app"
 
 if [ ! -f "$INFO_PLIST" ]; then
@@ -37,8 +37,15 @@ if [ ! -f "$RESOURCE_DIR/catalog.json" ] || [ ! -f "$RESOURCE_DIR/CHARACTERS-LIC
   exit 1
 fi
 POSE_COUNT=$(find "$RESOURCE_DIR" -type f -name '*.webp' | wc -l | tr -d ' ')
-if [ "$POSE_COUNT" -ne 193 ]; then
-  echo "Expected exactly 193 catalogued WebP poses, found $POSE_COUNT" >&2
+CATALOG_POSE_COUNT=$(node -e '
+const fs = require("node:fs");
+const catalog = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+if (!Array.isArray(catalog.characters)) throw new Error("catalog characters must be an array");
+const count = catalog.characters.reduce((sum, character) => sum + character.poseFiles.length, 0);
+console.log(count);
+' "$RESOURCE_DIR/catalog.json")
+if [ "$POSE_COUNT" -ne "$CATALOG_POSE_COUNT" ]; then
+  echo "Expected $CATALOG_POSE_COUNT catalog-listed WebP poses, found $POSE_COUNT" >&2
   exit 1
 fi
 
@@ -59,6 +66,37 @@ trap 'exit 1' HUP INT TERM
 /bin/cp "$EXECUTABLE" "$TEMP_BUNDLE/Contents/MacOS/$APP_NAME"
 /bin/cp "$INFO_PLIST" "$TEMP_BUNDLE/Contents/Info.plist"
 /bin/cp -R "$RESOURCE_DIR" "$TEMP_BUNDLE/Contents/Resources/CrossPet"
+BUNDLED_ASSETS="$TEMP_BUNDLE/Contents/Resources/CrossPet"
+node - "$BUNDLED_ASSETS" "$PROJECT_ROOT/assets/crosspet" <<'NODE'
+const fs = require("node:fs");
+const path = require("node:path");
+const crypto = require("node:crypto");
+const [bundleRoot, sourceRoot] = process.argv.slice(2);
+const catalog = JSON.parse(fs.readFileSync(path.join(bundleRoot, "catalog.json"), "utf8"));
+let upstreamCount = 0;
+let generatedCount = 0;
+for (const character of catalog.characters) {
+  const generated = new Set(character.generatedPoses ?? []);
+  if ([...generated].some((filename) => !character.poseFiles.includes(filename))) {
+    throw new Error(`${character.id}: generatedPoses must be a subset of poseFiles`);
+  }
+  for (const filename of character.poseFiles) {
+    const bundled = path.join(bundleRoot, character.assetDirectory, filename);
+    const source = path.join(sourceRoot, character.assetDirectory, filename);
+    if (!fs.existsSync(bundled) || !fs.existsSync(source)) {
+      throw new Error(`Missing catalog asset: ${character.id}/${filename}`);
+    }
+    const bundleHash = crypto.createHash("sha256").update(fs.readFileSync(bundled)).digest("hex");
+    const sourceHash = crypto.createHash("sha256").update(fs.readFileSync(source)).digest("hex");
+    if (bundleHash !== sourceHash) {
+      throw new Error(`${character.id}/${filename}: bundled SHA-256 differs from repository source`);
+    }
+    if (generated.has(filename)) generatedCount += 1;
+    else upstreamCount += 1;
+  }
+}
+console.log(`Verified bundled SHA-256: upstream-source=${upstreamCount}, generated-repository-copy=${generatedCount}`);
+NODE
 /bin/chmod 755 "$TEMP_BUNDLE/Contents/MacOS/$APP_NAME"
 /usr/bin/plutil -lint "$TEMP_BUNDLE/Contents/Info.plist" >/dev/null
 

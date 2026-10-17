@@ -1,3 +1,4 @@
+import assert from "node:assert/strict";
 import fs from "node:fs";
 import vm from "node:vm";
 
@@ -203,5 +204,62 @@ await new Promise((r) => setTimeout(r, 30));
 if (byId.get("bridge-state").textContent !== "连接已关闭" ||
     byId.get("bridge-toggle").checked !== false) ok = false;
 
+const panelCss = fs.readFileSync("apps/hana-desktop-pet/ui/assets/panel.css", "utf8");
+const stageRule = panelCss.match(/\.stage\s*\{([^}]*)\}/)?.[1] ?? "";
+const narrowStageRule = panelCss.match(/@media\s*\(max-width:\s*390px\)[\s\S]*?\.stage\s*\{([^}]*)\}/)?.[1] ?? "";
+assert.match(stageRule, /display:\s*grid;/, "stage uses a bounded grid");
+assert.match(stageRule, /grid-template-columns:\s*150px\s+minmax\(0,\s*1fr\);/);
+assert.match(stageRule, /overflow:\s*hidden;/, "stage clips paint to its border");
+assert.match(narrowStageRule, /grid-template-columns:\s*minmax\(0,\s*1fr\);/, "narrow stage stacks vertically");
+assert.match(panelCss, /(?:^|\n)img\s*\{\s*max-width:\s*100%;\s*height:\s*auto;\s*\}/m, "all images have a responsive width cap");
+
+for (const [bridge, host, fallback] of [
+  ["bg", "bg", "bg"], ["surface", "bg-card", "surface"], ["text", "text", "text"],
+  ["muted", "text-muted", "muted"], ["light", "text-light", "light"],
+  ["accent", "accent", "accent"], ["border", "border", "border"],
+]) {
+  assert.ok(panelCss.includes(`--hk-${bridge}: var(--${host}, var(--fallback-${fallback}));`),
+    `host ${host} must win over the ${fallback} fallback`);
+}
+assert.match(panelCss, /@media\s*\(prefers-color-scheme:\s*dark\)/, "system dark fallback exists");
+assert.match(panelCss, /:root\[data-appearance=\"dark\"\]\s*\{\s*--hk-on-accent:/,
+  "host appearance controls text on the accent color");
+
+const componentCss = panelCss
+  .replace(/:root\s*\{[^{}]*\}/g, "")
+  .replace(/:root\[data-appearance=\"(?:dark|light)\"\]\s*\{[^{}]*\}/g, "");
+assert.doesNotMatch(componentCss,
+  /\b(?:color|background(?:-color)?|border(?:-[a-z-]+)?|outline(?:-color)?|box-shadow|scrollbar-color|accent-color)\s*:[^;{}]*(?:#[0-9a-f]{3,8}\b|rgba?\()/i,
+  "component colors must come through bridge variables");
+
+function fallbackTokens(block) {
+  return Object.fromEntries([...block.matchAll(/(--fallback-[\w-]+)\s*:\s*(#[0-9a-f]{6})\s*;/gi)]
+    .map(([, name, value]) => [name.slice("--fallback-".length), value]));
+}
+function contrastRatio(left, right) {
+  const luminance = (hex) => {
+    const [r, g, b] = hex.slice(1).match(/../g).map((value) => parseInt(value, 16) / 255)
+      .map((value) => value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4);
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  };
+  const a = luminance(left), b = luminance(right);
+  return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
+}
+const lightRoot = panelCss.match(/:root\s*\{([^{}]*)\}/)?.[1] ?? "";
+const darkRoot = panelCss.match(/@media\s*\(prefers-color-scheme:\s*dark\)\s*\{\s*:root\s*\{([^{}]*)\}/)?.[1] ?? "";
+for (const [name, block] of [["light", lightRoot], ["dark", darkRoot]]) {
+  const p = fallbackTokens(block);
+  for (const [fg, bg] of [
+    ["text", "bg"], ["text", "surface"], ["muted", "bg"], ["muted", "surface"],
+    ["light", "bg"], ["light", "surface"], ["accent", "bg"], ["on-accent", "accent"],
+    ["neutral-text", "neutral-bg"], ["info-text", "info-bg"], ["success-text", "success-bg"],
+    ["warning-text", "warning-bg"], ["error-text", "error-bg"],
+    ["status-success", "bg"], ["status-warning", "bg"], ["status-error", "bg"],
+  ]) {
+    const ratio = contrastRatio(p[fg], p[bg]);
+    assert.ok(ratio >= 4.5, `${name} ${fg} on ${bg} contrast is ${ratio.toFixed(2)}:1`);
+  }
+}
+console.log("PANEL_LAYOUT_THEME_CONTRACT_OK");
 console.log(ok ? "PANEL_SMOKE_OK" : "PANEL_SMOKE_FAIL");
 process.exit(ok ? 0 : 1);

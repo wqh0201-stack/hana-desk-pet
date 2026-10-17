@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
-  "collection": "CrossPet original character pose assets",
-  "purpose": "Local non-commercial Hana Desk Pet prototype runtime integration only; not for distribution.",
+  "collection": "CrossPet original character pose assets and local supplements",
+  "purpose": "Public non-commercial Hana Desk Pet demo runtime integration; commercial use is prohibited.",
   "upstream": {
     "repository": "https://github.com/lokicorvus/crosspet",
     "version": "1.3.6",
@@ -14,14 +14,15 @@
   },
   "assetHandling": {
     "downloadedFrom": "https://raw.githubusercontent.com/lokicorvus/crosspet/18e924659c665eb6fcfcf5e161a81a75203af0ae/characters/",
-    "format": "Original WebP files, unchanged byte-for-byte; no crop, redraw, recolor, recompression, or sprite-sheet conversion.",
+    "format": "The 193 upstream WebP files are unchanged byte-for-byte; four locally AI-generated supplements are identified per character and are not upstream files.",
+    "generatedAssetPolicy": "claude/drawing.webp, gemini/idle-blink.webp, deepseek-hoodie/idle-2.webp, and deepseek-hoodie/idle-3.webp are local AI-generated supplements, not CrossPet originals or works attributable to an upstream artist; they are used under the same CC BY-NC-SA 4.0 terms.",
     "excluded": [
       "Upstream character.json files (including lines and app bindings)",
       "Generation prompts, source code, integrations, Easter-egg characters, greetings, and seasonal poses",
       "Pose files not listed under an item below"
     ],
     "runtimeIntegration": true,
-    "publicationAllowed": false,
+    "publicationAllowed": true,
     "commercialUseAllowed": false
   },
   "characters": [
@@ -33,8 +34,9 @@
       "assetDirectory": "claude",
       "designCredit": "CrossPet's AI-generated rendition of the community-popular Claude-girl design (copper/orange hair, orange-flower ornament, book). Upstream does not identify an individual illustrator or the original design author; its license lists ai-school-op and openpet-ai-girls as references, not as a verified direct source for this exact image.",
       "poseFiles": [
-        "asking.webp", "busy_left.webp", "busy_right.webp", "clawd.webp", "compact.webp", "delegating.webp", "happy-2.webp", "idle-2.webp", "idle-3.webp", "idle-blink.webp", "idle.webp", "listening.webp", "oops.webp", "proud.webp", "reading-2.webp", "running.webp", "searching.webp", "sleeping-2.webp", "sorry.webp", "surprised.webp", "swamped_left.webp", "swamped_right.webp", "thinking-2.webp", "thinking.webp", "tired.webp", "writing.webp"
-      ]
+        "asking.webp", "busy_left.webp", "busy_right.webp", "clawd.webp", "compact.webp", "delegating.webp", "drawing.webp", "happy-2.webp", "idle-2.webp", "idle-3.webp", "idle-blink.webp", "idle.webp", "listening.webp", "oops.webp", "proud.webp", "reading-2.webp", "running.webp", "searching.webp", "sleeping-2.webp", "sorry.webp", "surprised.webp", "swamped_left.webp", "swamped_right.webp", "thinking-2.webp", "thinking.webp", "tired.webp", "writing.webp"
+      ],
+      "generatedPoses": ["drawing.webp"]
     },
     {
       "id": "gpt",
@@ -66,8 +68,9 @@
       "assetDirectory": "gemini",
       "designCredit": "CrossPet's AI-generated rendition of a community-popular Gemini-girl design (cat ears, heterochromia, four-point-star ornament). Upstream does not name an individual original author or illustrator; ai-school-op and openpet-ai-girls are listed as references, not as verified direct sources for this exact image.",
       "poseFiles": [
-        "asking.webp", "busy_left.webp", "busy_right.webp", "compact.webp", "delegating.webp", "drawing.webp", "float.webp", "happy.webp", "idle-2.webp", "idle-3.webp", "idle.webp", "listening.webp", "oops.webp", "proud.webp", "reading.webp", "running.webp", "searching.webp", "sleeping.webp", "surprised.webp", "swamped_left.webp", "swamped_right.webp", "thinking.webp", "tired.webp", "writing.webp"
-      ]
+        "asking.webp", "busy_left.webp", "busy_right.webp", "compact.webp", "delegating.webp", "drawing.webp", "float.webp", "happy.webp", "idle-2.webp", "idle-3.webp", "idle-blink.webp", "idle.webp", "listening.webp", "oops.webp", "proud.webp", "reading.webp", "running.webp", "searching.webp", "sleeping.webp", "surprised.webp", "swamped_left.webp", "swamped_right.webp", "thinking.webp", "tired.webp", "writing.webp"
+      ],
+      "generatedPoses": ["idle-blink.webp"]
     },
     {
       "id": "glm",
@@ -89,8 +92,9 @@
       "assetDirectory": "deepseek-hoodie",
       "designCredit": "CrossPet-created derivative outfit based on the DeepSeek / 大肥鱼 character, credited as such in the upstream README and covered by the same CC BY-NC-SA 4.0 character license.",
       "poseFiles": [
-        "asking.webp", "busy_left.webp", "busy_right.webp", "compact.webp", "deepthink.webp", "delegating.webp", "drawing.webp", "eat.webp", "feast.webp", "happy.webp", "idle-blink.webp", "idle.webp", "listening.webp", "oops.webp", "proud.webp", "reading.webp", "running.webp", "searching.webp", "slack.webp", "sleeping.webp", "surprised.webp", "swamped_left.webp", "swamped_right.webp", "swim.webp", "thinking.webp", "tired.webp", "writing.webp"
-      ]
+        "asking.webp", "busy_left.webp", "busy_right.webp", "compact.webp", "deepthink.webp", "delegating.webp", "drawing.webp", "eat.webp", "feast.webp", "happy.webp", "idle-2.webp", "idle-3.webp", "idle-blink.webp", "idle.webp", "listening.webp", "oops.webp", "proud.webp", "reading.webp", "running.webp", "searching.webp", "slack.webp", "sleeping.webp", "surprised.webp", "swamped_left.webp", "swamped_right.webp", "swim.webp", "thinking.webp", "tired.webp", "writing.webp"
+      ],
+      "generatedPoses": ["idle-2.webp", "idle-3.webp"]
     },
     {
       "id": "gpt-onesie",

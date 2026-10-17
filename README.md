@@ -2,7 +2,7 @@
 
 一个跟着 Hana 干活的桌面宠物。
 
-Hana 在想事情，它歪头思考；Hana 在读文件，它翻书；Hana 在跑命令，它跑起来；你插的话被丢了，它会惊讶一下。形象用 CrossPet 原版立绘，7 个角色、193 张透明姿态图。
+Hana 在想事情，它歪头思考；Hana 在读文件，它翻书；Hana 在跑命令，它跑起来；你插的话被丢了，它会惊讶一下。形象用 CrossPet 原版立绘，7 个角色、197 张透明姿态图（193 张上游原图 + 4 张本地生成的补充）。
 
 > **这是 demo。** 给群友玩玩看的，不是产品。没做签名公证，没做安全加固，只支持 macOS。请按玩具的预期使用。
 
@@ -93,6 +93,8 @@ Hana
 
 角色立绘来自 [lokicorvus/crosspet](https://github.com/lokicorvus/crosspet) v1.3.6，许可 **CC BY-NC-SA 4.0**：不能商用、要署名、衍生要用相同许可。
 
+其中 193 张是上游原样文件，**另有 4 张是本项目用 AI 生成的补充**（Claude 的画画、Gemini 的眨眼、DeepSeek 卫衣款的两个待机变体），同样按 CC BY-NC-SA 4.0 使用，但不是 CrossPet 原图，署名不应算到上游或原画师头上。
+
 完整许可和逐项来源见 `assets/crosspet/CHARACTERS-LICENSE.md` 和 `assets/crosspet/ATTRIBUTION.md`，打包的 `.app` 里也带了一份。CrossPet 上游的 MIT 只覆盖它的源码，不覆盖这些图。
 
 本项目自己的代码用 MIT，见 `LICENSE`。
@@ -111,7 +113,7 @@ sh tools/package-pet-app.sh # 打桌宠 .app
 ```
 apps/hana-desktop-pet/   Hana 控制台（v2 App）
 pet-macos/               桌宠（Swift + AppKit）
-assets/crosspet/         193 张原版姿态图 + 许可 + 署名
+assets/crosspet/         197 张姿态图（193 上游 + 4 生成）+ 许可 + 署名
 tests/                   合成数据测试与检查驱动
 tools/                   检查与打包脚本
 docs/                    事件可用性探查

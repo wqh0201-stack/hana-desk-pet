@@ -338,12 +338,13 @@ struct PetCoreChecks {
         let directory = assetDirectory()
         let catalog = try PetArtworkCatalog(directoryURL: directory)
         let decodedCount = try catalog.validateAllAssets()
-        expect(decodedCount == 193, "all 193 catalog-listed WebP assets decode as single-frame alpha images")
+        let catalogPoseCount = PetRole.builtIns.reduce(0) { $0 + catalog.poseNames(forCharacterID: $1.id).count }
+        expect(decodedCount == catalogPoseCount, "all \(catalogPoseCount) catalog-listed WebP assets decode as single-frame alpha images")
         expect(PetRole.builtIns.map(\.id) == ["claude", "gpt", "deepseek", "gemini", "glm", "deepseek-hoodie", "gpt-onesie"], "seven character and skin IDs are stable")
 
         for role in PetRole.builtIns {
             let poses = catalog.poseNames(forCharacterID: role.id)
-            expect(poses.contains("idle") && poses.contains("thinking") && poses.contains("writing") && poses.contains("busy_left") && poses.contains("busy_right") && poses.contains("oops") && (poses.contains("happy") || poses.contains("happy-2")), "\(role.id) has all mapped activity poses")
+            expect(poses.contains("idle") && poses.contains("thinking") && poses.contains("writing") && poses.contains("busy_left") && poses.contains("busy_right") && poses.contains("oops") && poses.contains("drawing") && (poses.contains("happy") || poses.contains("happy-2")), "\(role.id) has all mapped activity poses, including drawing")
             guard let idle = catalog.frame(characterID: role.id, poseName: "idle") else {
                 fatalError("CHECK FAILED: \(role.id) idle artwork loads")
             }
@@ -351,13 +352,22 @@ struct PetCoreChecks {
             expect(!idle.containsOpaquePixel(x: 0, yFromTop: 0), "\(role.id) transparent corner remains click-through")
         }
 
+        let claudeDrawing = catalog.frame(characterID: "claude", poseName: "drawing")
+        let claudeThinking = catalog.frame(characterID: "claude", poseName: "thinking")
+        expect(claudeDrawing != nil && claudeDrawing !== claudeThinking, "Claude drawing loads its dedicated artwork instead of thinking fallback")
         let claudeHappy = catalog.frame(characterID: "claude", poseName: "happy")
         let claudeHappyVariant = catalog.frame(characterID: "claude", poseName: "happy-2")
         expect(claudeHappy === claudeHappyVariant, "Claude success pose resolves its catalogued happy-2 image")
         let claudeIdle = catalog.frame(characterID: "claude", poseName: "idle")
         expect(catalog.frame(characterID: "claude", poseName: "not-listed") === claudeIdle, "missing poses fall back only to that character's idle")
-        let hoodieIdle = catalog.frame(characterID: "deepseek-hoodie", poseName: "idle-2")
-        expect(hoodieIdle === catalog.frame(characterID: "deepseek-hoodie", poseName: "idle"), "missing skin variants fall back to that skin's idle")
+        let geminiIdle = catalog.frame(characterID: "gemini", poseName: "idle")
+        let geminiBlink = catalog.frame(characterID: "gemini", poseName: "idle-blink")
+        expect(geminiBlink != nil && geminiBlink !== geminiIdle, "Gemini's generated idle-blink loads instead of falling back to idle")
+        let hoodieIdle = catalog.frame(characterID: "deepseek-hoodie", poseName: "idle")
+        let hoodieIdle2 = catalog.frame(characterID: "deepseek-hoodie", poseName: "idle-2")
+        let hoodieIdle3 = catalog.frame(characterID: "deepseek-hoodie", poseName: "idle-3")
+        expect(hoodieIdle2 != nil && hoodieIdle3 != nil && hoodieIdle2 !== hoodieIdle && hoodieIdle3 !== hoodieIdle && hoodieIdle2 !== hoodieIdle3,
+               "DeepSeek hoodie idle-2 and idle-3 load their dedicated generated artwork")
 
         expect(PetArtworkPoseMapper.poseName(for: .idle, animationStep: 0) == "idle", "idle state uses idle art")
         expect(PetArtworkPoseMapper.poseName(for: .idle, animationStep: 8) == "idle-blink", "idle state uses the listed blink pose")
@@ -366,7 +376,7 @@ struct PetCoreChecks {
         expect(PetArtworkPoseMapper.poseName(for: .tool, animationStep: 0) == "busy_left" && PetArtworkPoseMapper.poseName(for: .tool, animationStep: 1) == "busy_right", "tool state alternates the listed busy poses")
         expect(PetArtworkPoseMapper.poseName(for: .success, animationStep: 0) == "happy", "success maps to happy")
         expect(PetArtworkPoseMapper.poseName(for: .error, animationStep: 0) == "oops", "error maps to oops")
-        print("PASS 193 WebP decodes, 7-role alpha hit masks, pose mapping and idle fallbacks")
+        print("PASS \(decodedCount) WebP decodes, 7-role alpha hit masks, pose mapping and idle fallbacks")
     }
 
     private static func testAlphaCoverageHit() throws {
