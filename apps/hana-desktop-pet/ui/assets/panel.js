@@ -379,7 +379,9 @@ function renderFollowReleaseNotice() {
   const followedSession = findSession(followedId);
   const followedName = followedSession ? listRowTitle(followedSession) : null;
   const nextTarget = followedName ? `现在跟随「${followedName}」` : "现在等待新的会话活动";
-  nodes.followReleaseNotice.textContent = `已取消固定「${releasedName}」：${FOLLOW_RELEASE_LABELS[release.reason]}；${nextTarget}。`;
+  // 释放永远由控制台自动判定，不是用户点了取消。写成「自动解除」既不会在
+  // 「刚点下固定就被释放」时谎报成用户取消，真关闭时读起来也仍然正确。
+  nodes.followReleaseNotice.textContent = `已自动解除固定「${releasedName}」：${FOLLOW_RELEASE_LABELS[release.reason]}；${nextTarget}。`;
   nodes.followReleaseNotice.hidden = false;
 }
 
@@ -493,9 +495,12 @@ function renderSessions(currentId, followedId) {
     }));
   // If the host session-list capability is unavailable, keep known active event
   // rows pinnable; never override an explicit archived lifecycle from the list.
+  // A row only counts as closed when nothing happened after the close, matching
+  // the backend rule: a resumed session must stay pickable.
+  const closedRow = (item) => (item?.closedAt ?? 0) > 0 && (item.closedAt >= (item.lastActivityAt ?? 0));
   if (!sessionList.available) {
     for (const item of Array.isArray(snapshot?.sessions) ? snapshot.sessions : []) {
-      if (item?.closedAt > 0 || !isPinnableOption(item?.sessionId) || rowsById.has(item.sessionId) ||
+      if (closedRow(item) || !isPinnableOption(item?.sessionId) || rowsById.has(item.sessionId) ||
           listed.some((entry) => entry?.sessionId === item?.sessionId && entry.lifecycle === "archived")) continue;
       rowsById.set(item.sessionId, item);
     }

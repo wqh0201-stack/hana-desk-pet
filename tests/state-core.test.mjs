@@ -14,6 +14,7 @@ import {
   FOLLOW_ACTIVE_WINDOW_MS,
   isPinnableSessionId,
   isPinnableEntry,
+  isClosedSession,
   pickableSessionList,
   isPlaceholderSessionId,
   isUnresolvedSessionId,
@@ -539,6 +540,96 @@ test("a closed, archived or long-missing pin is released with a reason", () => {
   assert.equal(unreadable.follow.mode, "pinned");
   assert.equal(unreadable.follow.missingSince, null);
   assert.equal(unreadable.follow.released, null);
+});
+
+test("a close followed by real activity no longer counts as closed, so the session stays pinnable", () => {
+  // Host-reported shape: session_closed arrives, then the user keeps using the
+  // same session. The old rule kept closedAt forever and released the pin on the
+  // very click that created it.
+  let state = createSnapshot();
+  state = applyEvent(state, { sessionId: "sess_resumed01", title: "又继续了" }, { type: "turn_start" }, 50000);
+  state = applyEvent(state, { sessionId: "sess_resumed01" }, { type: "session_closed" }, 50010);
+  let record = state.sessions.find((item) => item.sessionId === "sess_resumed01");
+  assert.equal(record.closedAt, 50010, "the close is still recorded");
+  assert.equal(isClosedSession(record), true, "nothing has happened since, so it is closed");
+
+  for (const type of ["agent_start", "turn_start", "auto_retry_start", "agent_end"]) {
+    let resumed = applyEvent(state, { sessionId: "sess_resumed01" }, { type, toolName: "read" }, 50020);
+    record = resumed.sessions.find((item) => item.sessionId === "sess_resumed01");
+    assert.equal(record.closedAt, 0, `${type} after a close clears closedAt`);
+    assert.equal(isClosedSession(record), false, `${type} makes the session live again`);
+
+    // Pinning right after the activity must hold, not be released in the same turn.
+    const follow = { ...createFollow(), mode: "pinned", pinnedSessionId: "sess_resumed01" };
+    const resolved = resolveFollow(follow, {
+      sessions: resumed.sessions, listEntries: [], listAvailable: true, now: 50021,
+    });
+    assert.equal(resolved.follow.mode, "pinned", `${type}: the new pin survives`);
+    assert.equal(resolved.follow.released, null, `${type}: nothing is auto-released`);
+    assert.equal(resolved.view.reason, "pinned");
+  }
+
+  // Tool events after a resumed turn clear the close too. A tool event that arrives
+  // with nothing before it is still dropped by the existing terminal-run guard, so
+  // the resume starts with the work event the host actually sends first.
+  let resumed = applyEvent(state, { sessionId: "sess_resumed01" }, { type: "agent_start" }, 50022);
+  for (const type of ["tool_execution_start", "tool_execution_end"]) {
+    resumed = applyEvent(resumed, { sessionId: "sess_resumed01" }, { type, toolName: "read" }, 50023);
+    record = resumed.sessions.find((item) => item.sessionId === "sess_resumed01");
+    assert.equal(record.closedAt, 0, `${type} keeps the session live`);
+    const resolved = resolveFollow(
+      { ...createFollow(), mode: "pinned", pinnedSessionId: "sess_resumed01" },
+      { sessions: resumed.sessions, listEntries: [], listAvailable: true, now: 50024 },
+    );
+    assert.equal(resolved.follow.mode, "pinned", `${type}: the pin survives`);
+  }
+  // The unchanged rule: a bare tool event after a terminal run is still ignored.
+  assert.equal(
+    applyEvent(state, { sessionId: "sess_resumed01" }, { type: "tool_execution_end", isError: false }, 50025),
+    state,
+    "a late tool event right after a close is still dropped (terminal-run guard unchanged)",
+  );
+});
+
+test("the closed rule is a second line of defence: closedAt older than last activity is live", () => {
+  // A record persisted before the activity rule existed still carries a stale
+  // closedAt. Even without any new event, resolveFollow must not treat it as closed.
+  const stale = {
+    sessionId: "sess_stale0001", title: "旧数据", status: "idle", running: false,
+    lastActivityAt: 60020, closedAt: 60010, statusAt: 60020,
+  };
+  assert.equal(isClosedSession(stale), false, "activity after the close wins");
+  assert.equal(isClosedSession({ ...stale, lastActivityAt: 60010 }), true, "equal timestamps are closed");
+  assert.equal(isClosedSession({ ...stale, closedAt: 0 }), false, "no close at all");
+  assert.equal(isClosedSession(null), false);
+
+  const resolved = resolveFollow(
+    { ...createFollow(), mode: "pinned", pinnedSessionId: "sess_stale0001" },
+    { sessions: [stale], listEntries: [], listAvailable: true, now: 60021 },
+  );
+  assert.equal(resolved.follow.mode, "pinned", "a stale closedAt cannot release the pin");
+  assert.equal(resolved.follow.released, null);
+});
+
+test("a genuinely closed session still releases its pin with pinned_closed", () => {
+  let state = createSnapshot();
+  state = applyEvent(state, { sessionId: "sess_done00001", title: "真的关掉了" }, { type: "turn_start" }, 61000);
+  state = applyEvent(state, { sessionId: "sess_done00001" }, { type: "session_closed" }, 61010);
+  // Only an idle event, not activity: it must not revive the closed session.
+  state = applyEvent(state, { sessionId: "sess_done00001" }, { type: "session_created" }, 61020);
+
+  const record = state.sessions.find((item) => item.sessionId === "sess_done00001");
+  assert.equal(record.closedAt, 61010, "no activity followed the close");
+  assert.equal(isClosedSession(record), true);
+
+  const resolved = resolveFollow(
+    { ...createFollow(), mode: "pinned", pinnedSessionId: "sess_done00001" },
+    { sessions: state.sessions, listEntries: [], listAvailable: true, now: 61030 },
+  );
+  assert.equal(resolved.follow.mode, "latest");
+  assert.equal(resolved.follow.pinnedSessionId, null);
+  assert.equal(resolved.follow.released.reason, "pinned_closed");
+  assert.equal(resolved.follow.released.sessionId, "sess_done00001");
 });
 
 test("a follow record is normalized and never carries unexpected fields", () => {

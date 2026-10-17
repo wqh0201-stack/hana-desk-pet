@@ -215,6 +215,23 @@ function cleanSession(session) {
   };
 }
 
+/**
+ * Whether a record is provably ended: it saw a `session_closed` and nothing has
+ * happened to it since.
+ *
+ * `closedAt > 0` alone is not enough. The host reports `session_closed` for
+ * sessions the user keeps opening and typing into, so a closed timestamp can sit
+ * on a live record forever. Comparing it with the last observed activity keeps a
+ * resumed session live even for a record persisted before this rule existed.
+ */
+export function isClosedSession(record) {
+  if (!record) return false;
+  const closedAt = Number.isFinite(record.closedAt) ? record.closedAt : 0;
+  if (closedAt <= 0) return false;
+  const lastActivityAt = Number.isFinite(record.lastActivityAt) ? record.lastActivityAt : 0;
+  return closedAt >= lastActivityAt;
+}
+
 function activityOrder(a, b) {
   return b.lastActivityAt - a.lastActivityAt || a.sessionId.localeCompare(b.sessionId);
 }
@@ -230,7 +247,7 @@ function latestActive(records) {
   for (const record of records) {
     if (record.lastActivityAt <= 0 || record.unresolved === true) continue;
     if (fallback === null || activityOrder(record, fallback) < 0) fallback = record;
-    if (record.closedAt > 0) continue;
+    if (isClosedSession(record)) continue;
     if (best === null || activityOrder(record, best) < 0) best = record;
   }
   return best ?? fallback;
@@ -255,7 +272,7 @@ function selectCurrent(previous, ordered, candidate, observedAt, { bypassHystere
   // and the ordinary activity margin. Prefer the newest outstanding confirmation.
   const confirming = ordered
     .filter((item) => item.sessionId !== incumbent.sessionId && item.unresolved !== true &&
-      item.closedAt <= 0 && effectiveHint(item, observedAt) === "confirming")
+      !isClosedSession(item) && effectiveHint(item, observedAt) === "confirming")
     .sort((a, b) => b.hintAt - a.hintAt || activityOrder(a, b))[0] ?? null;
   if (confirming) return confirming;
 
@@ -265,7 +282,7 @@ function selectCurrent(previous, ordered, candidate, observedAt, { bypassHystere
 
   // A closed current is no longer a live incumbent. Follow the best remaining
   // candidate (or latest closed fallback) instead of applying hysteresis to it.
-  if (incumbent.closedAt > 0 && candidate && candidate.sessionId !== incumbent.sessionId) return candidate;
+  if (isClosedSession(incumbent) && candidate && candidate.sessionId !== incumbent.sessionId) return candidate;
 
   if (candidate?.sessionId === incumbent.sessionId) return incumbent;
   if (!candidate) return null;
@@ -486,6 +503,11 @@ export function applyEvent(snapshot, identity, event, receivedAt = Date.now(), f
 
   if (ACTIVITY_EVENTS.has(event.type)) {
     record.lastActivityAt = observedAt;
+    // Real activity after a close proves the close did not end this conversation:
+    // the host reports `session_closed` and then keeps the same session usable.
+    // Only a close with nothing after it may count as closed. `runEnded` still
+    // governs late tool events on its own and is deliberately untouched here.
+    record.closedAt = 0;
   }
 
   if (event.type === "agent_start") {
@@ -770,7 +792,7 @@ export function resolveFollow(value, options = {}) {
     const sessionId = follow.pinnedSessionId;
     const record = activity.find((item) => item.sessionId === sessionId) ?? null;
     const entry = listEntries.find((item) => item?.sessionId === sessionId) ?? null;
-    const closed = record !== null && record.closedAt > 0;
+    const closed = isClosedSession(record);
     const archived = entry !== null && entry.lifecycle !== "active";
     const missing = listAvailable && entry === null;
     const expired = missing && follow.missingSince !== null && at - follow.missingSince >= missingGraceMs;

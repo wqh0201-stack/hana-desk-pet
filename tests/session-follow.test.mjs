@@ -290,6 +290,33 @@ test("a closed pinned session releases the pin and the pet keeps moving", async 
   assert.equal(follow.reason, "latest");
 });
 
+test("a session closed and then used again can be pinned without being released in the same turn", async () => {
+  // The reported bug: the host sent session_closed for a session the user kept
+  // using, so the first click on that row pinned it and released it immediately
+  // with a bogus "已取消固定 … 会话已关闭" notice.
+  const harness = await mount();
+  await emit(harness, { type: "agent_start", sessionId: "session-alpha-0001" }, "/private/session/alpha");
+  await emit(harness, { type: "agent_start", sessionId: "session-beta-0002" }, "/private/session/beta", 1001);
+  await emit(harness, { type: "session_closed", sessionId: "session-alpha-0001" }, "/private/session/alpha");
+  assert.ok(harness.read(SNAPSHOT_KEY).sessions
+    .find((item) => item.sessionId === "session-alpha-0001").closedAt > 0, "the close was recorded");
+
+  // The user keeps working in that very session.
+  await emit(harness, { type: "turn_start", sessionId: "session-alpha-0001" }, "/private/session/alpha", 1002);
+  const resumed = harness.read(SNAPSHOT_KEY).sessions
+    .find((item) => item.sessionId === "session-alpha-0001");
+  assert.equal(resumed.closedAt, 0, "activity after the close clears it");
+
+  await request(harness, "session-alpha-0001");
+
+  const follow = harness.read(FOLLOW_KEY);
+  assert.equal(follow.mode, "pinned", "the pin must survive the click that created it");
+  assert.equal(follow.pinnedSessionId, "session-alpha-0001");
+  assert.equal(follow.released, null, "no release notice is produced");
+  assert.equal(harness.read(SNAPSHOT_KEY).current.sessionId, "session-alpha-0001");
+  assertClean(harness.store, "store after pinning a resumed session");
+});
+
 test("an archived pinned session releases immediately to a challenger inside the margin", async () => {
   const harness = await mount();
   await emit(harness, { type: "agent_start", sessionId: "session-alpha-0001" }, "/private/session/alpha");

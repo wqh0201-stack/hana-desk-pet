@@ -169,6 +169,9 @@ storageChange?.(["hana-pet.follow", "hana-pet.session-list"]);
 await new Promise((r) => setTimeout(r, 30));
 if (followReleaseNotice.hidden || !followReleaseNotice.textContent.includes("会话已归档") ||
     !followReleaseNotice.textContent.includes("现在跟随「给桌宠加绑定」")) ok = false;
+// An automatic release is never reported as the user cancelling the pin.
+if (!followReleaseNotice.textContent.includes("已自动解除固定") ||
+    followReleaseNotice.textContent.includes("已取消固定")) ok = false;
 await new Promise((r) => setTimeout(r, 30));
 if (followReleaseNotice.hidden) ok = false;
 
