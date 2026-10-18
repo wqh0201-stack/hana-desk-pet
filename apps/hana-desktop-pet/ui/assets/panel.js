@@ -71,10 +71,50 @@ const ROLES = [
   { id: "gpt-onesie", name: "GPT 降智龙崽", shortName: "GPT 龙崽" },
 ];
 const CONNECTION_STATUSES = new Set(["disabled", "connecting", "connected", "offline"]);
+/**
+ * 静态白名单下载地址。只允许打开这里定义的入口，面板不提供任意 URL。
+ * Windows 指向约定的 windows-0.2.0 Release；该 Release 是否已上线由发布方核对，
+ * 代码不预先假定它能下载。
+ */
+const PET_DOWNLOADS = Object.freeze({
+  windows: Object.freeze({
+    url: "https://github.com/wqh0201-stack/hana-desk-pet/releases/download/windows-0.2.0/HanaDesktopPet-windows-0.2.0-portable.zip",
+  }),
+  mac: Object.freeze({
+    url: "https://github.com/wqh0201-stack/hana-desk-pet/releases/download/console-0.6.5/HanaDesktopPet-crosspet-v0.5.8-local.zip",
+  }),
+});
+/**
+ * 引导文案只说“为什么没连上、下一步做什么”，从不断言“没安装”。
+ * connecting 不显示失败语，connected 整块收起。
+ */
+const ONBOARDING_COPY = Object.freeze({
+  disabled: "先打开右侧的「本机连接」。还没下载桌宠的话，按系统选一个版本。",
+  connecting: "正在连接本机桌宠…",
+  unknown: "连接状态暂时读不到。仍可按系统下载桌宠，状态恢复后这里会自动更新。",
+});
+/** offline 只补连接条没说的一步：先启动已下载的，再给下载入口；不断言“未安装”。 */
+const ONBOARDING_OFFLINE_COPY = Object.freeze({
+  unreachable: "已经下载过就先打开它；还没有的话，按系统选一个版本下载。",
+  version_mismatch: "换成配套版本后重新打开桌宠；不确定就重新下载一份。",
+  invalid_response: "先重启桌宠；仍然异常就重新下载对应系统的版本。",
+});
+const ONBOARDING_OFFLINE_FALLBACK =
+  "已经下载过就先打开它；还没有的话，按系统选一个版本下载。";
+const DOWNLOAD_FAILED_TEXT =
+  "当前宿主没能直接打开浏览器。请手动复制下面的链接到浏览器下载：";
 const nodes = {
   bridgeToggle: document.getElementById("bridge-toggle"),
   bridgeState: document.getElementById("bridge-state"),
   connectionNote: document.getElementById("connection-note"),
+  onboarding: document.getElementById("pet-onboarding"),
+  onboardingLead: document.getElementById("onboarding-lead"),
+  onboardingHelp: document.getElementById("onboarding-help"),
+  onboardingFallback: document.getElementById("onboarding-fallback"),
+  onboardingFallbackText: document.getElementById("onboarding-fallback-text"),
+  onboardingFallbackUrl: document.getElementById("onboarding-fallback-url"),
+  downloadWindows: document.getElementById("download-windows"),
+  downloadMac: document.getElementById("download-mac"),
   panelNotice: document.getElementById("panel-notice"),
   followReleaseNotice: document.getElementById("follow-release-notice"),
   stageImage: document.getElementById("stage-image"),
@@ -131,7 +171,10 @@ let selectionWriteToken = 0;
 let noticeTimer = null;
 let sessionSnapKey = "";
 let resizeTimer = null;
-
+/** 宿主状态读不到时不给引导加上任何连接或安装判断。 */
+let stateReadable = true;
+/** 打开外链失败后的降级信息：只存白名单里的平台与固定地址。 */
+let onboardingFallback = null;
 const HOST_THEME_STYLE_ATTRIBUTE = "data-hana-theme-style";
 let themeCssRequestId = 0;
 let activeThemeCssUrl = null;
@@ -360,8 +403,9 @@ function clockTime(value) {
   return `${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
 }
 
-function setNotice(message) {
+function setNotice(message, tone = "error") {
   nodes.panelNotice.textContent = message;
+  nodes.panelNotice.dataset.tone = tone;
   if (noticeTimer !== null) window.clearTimeout(noticeTimer);
   if (message) noticeTimer = window.setTimeout(() => {
     nodes.panelNotice.textContent = "";
@@ -735,8 +779,13 @@ function syncSessionListHeight() {
   list.style.maxHeight = `${Math.round(fit * rowHeight - SESSION_ROW_GAP)}px`;
 }
 
+/** 面板显示的连接状态：关闭意味着一律当 disabled，不把旧失败原因带回来。 */
+function visibleConnectionState() {
+  return bridgeEnabled ? bridgeStatus : "disabled";
+}
+
 function renderConnection() {
-  const visible = bridgeEnabled ? bridgeStatus : "disabled";
+  const visible = visibleConnectionState();
   let label = CONNECTION_LABELS[visible] ?? "连接状态未知";
   let note = "";
   if (visible === "offline") {
@@ -748,10 +797,108 @@ function renderConnection() {
   nodes.connectionNote.textContent = note;
   nodes.connectionNote.hidden = !note;
   nodes.bridgeToggle.checked = bridgeEnabled;
+  return visible;
+}
+
+const DOWNLOAD_PLATFORM_LABELS = Object.freeze({ windows: "Windows 版", mac: "macOS 版" });
+
+/**
+ * 引导只做三件事：解释现在的连接状态、指向两个固定平台入口、在打开失败时
+ * 给出可手动复制的同一地址。它不根据状态推断「装了/没装」，也不猜宿主系统。
+ */
+function onboardingModel(visible) {
+  if (!stateReadable) return { lead: ONBOARDING_COPY.unknown, state: "unknown" };
+  if (visible === "connected") return null;
+  if (visible === "offline") {
+    return {
+      lead: ONBOARDING_OFFLINE_COPY[bridgeReason] ?? ONBOARDING_OFFLINE_FALLBACK,
+      state: "offline",
+    };
+  }
+  const state = visible === "connecting" ? "connecting" : "disabled";
+  return { lead: ONBOARDING_COPY[state], state };
+}
+
+function renderOnboarding(visible) {
+  const model = onboardingModel(visible);
+  if (!model) {
+    // 连上以后收起主要引导；降级提示和已展开的说明都不留在屏幕上，
+    // 下次断开时重新从真实结果开始。
+    onboardingFallback = null;
+    if (nodes.onboardingHelp?.open) nodes.onboardingHelp.open = false;
+    nodes.onboarding.hidden = true;
+    nodes.onboardingLead.textContent = "";
+    nodes.onboardingFallback.hidden = true;
+    if (nodes.onboardingFallbackUrl.textContent) nodes.onboardingFallbackUrl.textContent = "";
+    return;
+  }
+  nodes.onboarding.hidden = false;
+  nodes.onboarding.dataset.state = model.state;
+  nodes.onboardingLead.textContent = model.lead;
+  nodes.onboardingLead.dataset.state = model.state;
+
+  const fallback = onboardingFallback;
+  nodes.onboardingFallback.hidden = !fallback;
+  if (fallback) {
+    nodes.onboardingFallbackText.textContent = `${DOWNLOAD_FAILED_TEXT}（${fallback.platformLabel}）`;
+    if (nodes.onboardingFallbackUrl.textContent !== fallback.url) {
+      nodes.onboardingFallbackUrl.textContent = fallback.url;
+    }
+  } else if (nodes.onboardingFallbackUrl.textContent) {
+    nodes.onboardingFallbackUrl.textContent = "";
+  }
+}
+
+/** 把降级地址整体选中，键盘用户可直接 Ctrl/⌘+C；不自动写剪贴板。 */
+function selectFallbackUrl() {
+  const node = nodes.onboardingFallbackUrl;
+  node.focus?.();
+  try {
+    if (typeof document.createRange !== "function" || !window.getSelection) return;
+    const range = document.createRange();
+    range.selectNodeContents(node);
+    const selection = window.getSelection();
+    selection?.removeAllRanges?.();
+    selection?.addRange?.(range);
+  } catch {
+    // 选区不可用时仍保留可点击、可拖选的文本，不阻断用户。
+  }
+}
+
+/**
+ * 只允许打开白名单里的固定 HTTPS 地址。宿主拒绝或调用失败时退到可复制的
+ * 同一地址：不新增剪贴板能力，也不尝试其它跳转路径。
+ */
+async function openPetDownload(platform) {
+  const entry = PET_DOWNLOADS[platform];
+  if (!entry) return;
+  const platformLabel = DOWNLOAD_PLATFORM_LABELS[platform];
+  let failure = null;
+  try {
+    const external = hana.external;
+    if (!external || typeof external.open !== "function") {
+      throw new Error("hana.external.open is unavailable");
+    }
+    await external.open({ url: entry.url });
+  } catch (error) {
+    failure = error;
+  }
+  if (failure) {
+    console.warn("Hana 桌宠面板无法直接打开下载链接；已退到可复制链接。",
+      failure?.code ?? failure?.name ?? "unknown");
+    onboardingFallback = { platform, platformLabel, url: entry.url };
+    render();
+    selectFallbackUrl();
+    return;
+  }
+  onboardingFallback = null;
+  renderOnboarding(visibleConnectionState());
+  // 浏览器已经接手，这里只是回显；用中性色，不把成功消息画画成告警。
+  setNotice("已在浏览器打开下载链接。", "ok");
 }
 
 function render() {
-  renderConnection();
+  const visibleConnection = renderConnection();
   const followedId = getFollowedId();
   const current = getFollowedSession() ?? null;
   const status = visibleStatus(current);
@@ -769,6 +916,7 @@ function render() {
   nodes.followMode.dataset.mode = follow.mode;
   nodes.followAuto.hidden = follow.mode !== "pinned";
   renderRoleOptions();
+  renderOnboarding(visibleConnection);
   renderFollowReleaseNotice();
   renderSessions(followedId);
   syncSessionListHeight();
@@ -822,12 +970,16 @@ async function refresh() {
       : "disabled";
     bridgeReason = BRIDGE_REASONS.has(statusRecord?.reason) ? statusRecord.reason : null;
     poseState = bridgeEnabled && bridgeStatus === "connected" ? normalizePoseState(statusRecord?.poseState) : null;
+    stateReadable = true;
     render();
   } catch {
+    // 状态读不到就不写任何连接结论，也不根据旧值推断安装情况。
+    stateReadable = false;
     nodes.bridgeState.textContent = "状态暂不可读";
     nodes.bridgeState.dataset.status = "error";
     nodes.connectionNote.textContent = "控制台状态暂不可读，请稍后重试。";
     nodes.connectionNote.hidden = false;
+    renderOnboarding(null);
     setNotice("");
   }
 }
@@ -901,6 +1053,29 @@ nodes.bridgeToggle.addEventListener("change", async () => {
     setNotice("连接开关未能保存，已恢复原状态。");
   }
 });
+
+// 下载入口是真实的 <a href>（带说明的 Release 附件），让键盘与辅助技术看到链接语义；
+// 点击时交给宿主的外部打开能力，避免在沙箱 iframe 里导航或静默失败。
+for (const [platform, anchor] of [["windows", nodes.downloadWindows], ["mac", nodes.downloadMac]]) {
+  if (!anchor) continue;
+  anchor.addEventListener("click", (event) => {
+    event.preventDefault();
+    void openPetDownload(platform);
+  });
+}
+
+// 安装说明是浮层：键盘用户用 Esc 或点外面关掉，不抢焦点、不留隐性遮挡。
+const onboardingHelpNode = nodes.onboardingHelp;
+if (onboardingHelpNode) {
+  document.addEventListener?.("keydown", (event) => {
+    if (event.key === "Escape" && onboardingHelpNode.open) onboardingHelpNode.open = false;
+  });
+  document.addEventListener?.("pointerdown", (event) => {
+    if (!onboardingHelpNode.open) return;
+    const path = typeof event.composedPath === "function" ? event.composedPath() : [];
+    if (!path.includes(onboardingHelpNode)) onboardingHelpNode.open = false;
+  });
+}
 
 hana.ready();
 const stop = hana.storage.global.onChanged((keys) => {

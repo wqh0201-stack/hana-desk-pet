@@ -2,12 +2,13 @@
   "manifestVersion": 2,
   "id": "hana-desktop-pet",
   "name": "Hana 桌宠控制台",
-  "version": "0.6.5",
+  "version": "0.6.6",
   "entry": "index.js",
   "icon": "assets/icon.png",
   "minAppVersion": "1.1.7-beta",
   "capabilities": [
-    "app/sessions.read"
+    "app/sessions.read",
+    "app/ui.open-external"
   ],
   "network": {
     "allowedHosts": ["127.0.0.1"],

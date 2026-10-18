@@ -19,6 +19,40 @@
       </label>
     </section>
 
+    <!--
+      连接引导：只解释「为什么没连上、下一步做什么、去哪里下载」。
+      连上以后整块收起；不是模态、不是第二个控制面板，两个平台入口始终并列。
+    -->
+    <section id="pet-onboarding" class="pet-onboarding" aria-label="桌宠启动与下载引导" hidden>
+      <p id="onboarding-lead" class="onboarding-lead"></p>
+      <div class="onboarding-actions">
+        <a id="download-windows" class="download-link" data-platform="windows"
+           href="https://github.com/wqh0201-stack/hana-desk-pet/releases/download/windows-0.2.0/HanaDesktopPet-windows-0.2.0-portable.zip"
+           rel="noreferrer">下载 Windows 版</a>
+        <a id="download-mac" class="download-link" data-platform="mac"
+           href="https://github.com/wqh0201-stack/hana-desk-pet/releases/download/console-0.6.5/HanaDesktopPet-crosspet-v0.5.8-local.zip"
+           rel="noreferrer">下载 macOS 版</a>
+        <details id="onboarding-help" class="onboarding-help">
+          <summary>安装说明</summary>
+          <div class="onboarding-help-body">
+            <ol>
+              <li>下载对应系统的 zip 并解压。</li>
+              <li>Windows 双击 exe；macOS 右键 → 打开 .app。</li>
+              <li>同一台电脑上，在 Hana 控制台打开「本机连接」。</li>
+            </ol>
+            <p class="onboarding-hint">
+              首次提示来源不明时按系统提示确认，不必关闭安全防护；请核对下载来源是 Release「windows-0.2.0」。
+            </p>
+          </div>
+        </details>
+      </div>
+      <div id="onboarding-fallback" class="onboarding-fallback" role="status" hidden>
+        <p id="onboarding-fallback-text" class="onboarding-fallback-text"></p>
+        <code id="onboarding-fallback-url" class="onboarding-fallback-url" tabindex="0"
+              aria-label="手动复制的下载链接"></code>
+      </div>
+    </section>
+
     <p id="panel-notice" class="panel-notice" role="status" aria-live="polite"></p>
     <p id="follow-release-notice" class="follow-release-notice" role="status" aria-live="polite" hidden></p>
 

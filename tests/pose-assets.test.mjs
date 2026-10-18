@@ -159,3 +159,50 @@ test("every catalog-resolvable character/pose pair is indexed, including variant
   }
   console.log(`POSE_COVERAGE_OK combinations=${combinations.length} base_variant_candidates=${parsedCandidates}`);
 });
+
+// 包内许可副本是「同步副本」，不是第二份许可权威：canonical 在根 LICENSE 与
+// assets/crosspet/。这里逐字节校验，确保 App 被官方 packer 归档时带着同一份文本。
+const APP_ROOT = path.join(ROOT, "apps/hana-desktop-pet");
+const LICENSE_COPIES = [
+  { copy: path.join(APP_ROOT, "LICENSE"), canonical: path.join(ROOT, "LICENSE"), label: "MIT LICENSE" },
+  { copy: path.join(APP_ROOT, "assets/ATTRIBUTION.md"), canonical: path.join(SOURCE_ROOT, "ATTRIBUTION.md"), label: "角色署名 ATTRIBUTION.md" },
+  { copy: path.join(APP_ROOT, "assets/CHARACTERS-LICENSE.md"), canonical: path.join(SOURCE_ROOT, "CHARACTERS-LICENSE.md"), label: "角色许可 CHARACTERS-LICENSE.md" },
+];
+
+test("App-bundled license copies stay byte-identical to the canonical texts", () => {
+  for (const { copy, canonical, label } of LICENSE_COPIES) {
+    assert.ok(fs.existsSync(copy), `${label} must ship inside the App package: ${path.relative(ROOT, copy)}`);
+    assert.ok(fs.existsSync(canonical), `${label} canonical text is missing: ${path.relative(ROOT, canonical)}`);
+    assert.deepEqual(
+      fs.readFileSync(copy),
+      fs.readFileSync(canonical),
+      `${label} must match its canonical text byte for byte; update the copy instead of editing it in place`,
+    );
+  }
+});
+
+test("the App README states the real pose provenance and does not deny distribution", () => {
+  const readme = fs.readFileSync(path.join(APP_ROOT, "README.md"), "utf8");
+  const poses = catalog.characters.reduce((sum, role) => sum + role.poseFiles.length, 0);
+  const generated = catalog.characters.reduce((sum, role) => sum + (role.generatedPoses ?? []).length, 0);
+  // 数字必须与 canonical catalog 一致，不能写死一个过期数字。
+  assert.equal(poses, 211);
+  assert.match(readme, new RegExp(`${poses} 张 WebP`), "README must state the real pose count");
+  assert.match(readme, new RegExp(`${poses - generated} 张为 CrossPet 上游原样素材`),
+    "README must state the real upstream count");
+  assert.match(readme, new RegExp(`${generated} 张为本地 AI 生成`), "README must state the real generated count");
+  assert.match(readme, /CC BY-NC-SA 4\.0/, "README must name the character license");
+  assert.match(readme, /允许非商业转载与分发/, "README must not deny the non-commercial distribution the license allows");
+  assert.match(readme, /不得商用/, "README must keep the non-commercial restriction");
+  // 旧原型说明里的错误断言不得复活。
+  assert.doesNotMatch(readme, /archive 不含这些图片/, "README must not claim the App archive has no character images");
+  assert.doesNotMatch(readme, /仅随本机桌宠 `\.app` 分发/, "README must not restrict the images to the macOS app only");
+  assert.doesNotMatch(readme, /不得商用、上传或对外发布/, "README must not forbid all outward distribution");
+  // 两个平台与两项权限都要说清楚。
+  assert.match(readme, /macOS 与 Windows/, "README must cover both desktop platforms");
+  assert.match(readme, /app\/ui\.open-external/, "README must document the external-open capability");
+  assert.match(readme, /app\/sessions\.read/, "README must document the session-read capability");
+  // 后台只回环，网页由用户点击后交给浏览器。
+  assert.match(readme, /127\.0\.0\.1/, "README must state the loopback-only backend");
+  assert.match(readme, /浏览器去访问 GitHub/, "README must separate user-initiated browsing from backend network");
+});

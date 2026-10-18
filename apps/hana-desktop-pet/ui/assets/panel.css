@@ -321,6 +321,7 @@ img { max-width: 100%; height: auto; }
   font-size: 10.5px;
   line-height: 1.4;
 }
+.panel-notice[data-tone="ok"] { color: var(--hk-muted); }
 .panel-notice:empty { display: none; }
 .panel-notice:not(:empty) { padding: 5px 3px 0; }
 .follow-release-notice {
@@ -334,6 +335,149 @@ img { max-width: 100%; height: auto; }
   font-size: 10.5px;
   line-height: 1.4;
   overflow-wrap: anywhere;
+}
+
+/*
+ * 连接引导：与连接条同宽的一条紧凑说明 + 两个平台入口 + 可展开的安装说明。
+ * 它不是模态，也不新增第二个控制区域；连上以后整块收起。
+ */
+.pet-onboarding {
+  display: flex;
+  flex: 0 0 auto;
+  flex-direction: column;
+  gap: 5px;
+  padding: 6px 10px 7px;
+  border: 1px solid var(--hk-border);
+  border-left: 3px solid var(--hk-neutral-bg);
+  border-radius: var(--radius-m);
+  background: var(--hk-surface-soft);
+}
+.pet-onboarding[data-state="offline"] {
+  border-left-color: var(--hk-status-error-dot);
+}
+.onboarding-lead {
+  margin: 0;
+  color: var(--hk-muted);
+  font-size: 10.5px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+  text-wrap: pretty;
+}
+.onboarding-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 6px;
+}
+.download-link {
+  flex: 0 1 auto;
+  min-height: 24px;
+  padding: 3px 9px;
+  border: 1px solid var(--hk-border-strong);
+  border-radius: 999px;
+  color: var(--hk-accent-readable);
+  background: var(--hk-surface);
+  font-size: 10.5px;
+  font-weight: 650;
+  line-height: 1.4;
+  text-decoration: none;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.download-link:hover {
+  border-color: var(--hk-accent);
+  background: var(--hk-hover);
+  text-decoration: underline;
+}
+.download-link:focus-visible,
+.onboarding-help summary:focus-visible,
+.onboarding-fallback-url:focus-visible {
+  outline: 3px solid var(--hk-accent);
+  outline-offset: 2px;
+}
+.onboarding-help {
+  flex: 1 1 40px;
+  min-width: 0;
+  color: var(--hk-muted);
+  font-size: 10.5px;
+  line-height: 1.4;
+}
+/* 展开时占满整行，正文在按钮下面展开，不会把按钮折行。 */
+.onboarding-help[open] { flex-basis: 100%; }
+.onboarding-help summary {
+  min-height: 24px;
+  padding: 3px 2px;
+  color: var(--hk-accent-readable);
+  font-size: 10.5px;
+  font-weight: 650;
+  cursor: pointer;
+  list-style: none;
+}
+.onboarding-help summary::-webkit-details-marker { display: none; }
+.onboarding-help summary::before {
+  display: inline-block;
+  width: 13px;
+  color: var(--hk-light);
+  content: "▸";
+}
+.onboarding-help[open] summary::before { content: "▾"; }
+.onboarding-help ol {
+  margin: 2px 0 0;
+  padding-left: 18px;
+  overflow-wrap: anywhere;
+}
+/*
+ * 展开的安装说明是用户主动要看的详情：限高内滚，与会话诊断明细同一处理方式
+ * （一屏定高的显式例外），会话列表仍留整行。
+ */
+.onboarding-help-body {
+  max-height: 52px;
+  padding-right: 4px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-color: var(--hk-border-strong) transparent;
+  scrollbar-width: thin;
+}
+@media (max-height: 600px) {
+  .onboarding-help-body { max-height: 40px; }
+}
+.onboarding-help li { margin: 0 0 2px; }
+.onboarding-hint {
+  margin: 3px 0 0;
+  color: var(--hk-light);
+  overflow-wrap: anywhere;
+}
+/* 宿主拒权或打开失败时的降级：完整地址可换行、可选中复制，不新增剪贴板能力。 */
+.onboarding-fallback {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 5px 7px;
+  border: 1px solid var(--hk-warning-text);
+  border-radius: var(--radius-s);
+  background: var(--hk-warning-bg);
+}
+.onboarding-fallback-text {
+  margin: 0;
+  color: var(--hk-warning-text);
+  font-size: 10px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+.onboarding-fallback-url {
+  display: block;
+  padding: 3px 6px;
+  border: 1px solid var(--hk-border-strong);
+  border-radius: var(--radius-s);
+  color: var(--hk-text);
+  background: var(--hk-surface);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 9.5px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+  word-break: break-all;
+  user-select: all;
+  cursor: text;
 }
 
 /* 主卡：角色名是第一视觉，会话是第二层，时间只出现一次。 */
@@ -764,9 +908,10 @@ h2 {
   .session-button { min-height: 41px; padding: 3px 9px; }
 }
 
-/* 矮窗口先压舞台和角色条，尽量把会话整行留在视野里。 */
+/* 矮窗口先压舞台和角色条，尽量把会话整行留在视野里。引导条同样收高度。 */
 @media (max-height: 650px) {
   .controller { gap: 5px; padding: 8px 12px; }
+  .pet-onboarding { gap: 4px; padding: 5px 9px 6px; }
   .stage { grid-template-columns: 148px minmax(0, 1fr); gap: 11px; padding: 6px 12px; }
   .stage-image-frame { width: 148px; max-width: 100%; }
   .stage-copy h1 { font-size: 17px; }
@@ -790,6 +935,11 @@ h2 {
   .controller { padding: 8px; }
   .connection-bar { gap: 7px; padding-inline: 8px; }
   .connection-state, .connection-note { font-size: 10.5px; }
+  .pet-onboarding { padding: 4px 8px 5px; gap: 3px; }
+  .onboarding-lead { font-size: 10px; }
+  .onboarding-actions { gap: 4px; }
+  .download-link { padding: 2px 7px; font-size: 10px; }
+  .onboarding-help-body { max-height: 36px; }
   .stage {
     grid-template-columns: minmax(0, 1fr);
     gap: 8px;
