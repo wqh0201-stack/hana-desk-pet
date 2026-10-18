@@ -1,8 +1,34 @@
 # 变更记录
 
-两端分开版本：**控制台**（Hana v2 App，`apps/hana-desktop-pet`）与**桌宠**（Swift + AppKit，`pet-macos`）。桌宠当前 `0.5.8`，控制台当前 `0.6.5`。
+各端分开版本：**控制台**（Hana v2 App，`apps/hana-desktop-pet`）、**macOS 桌宠**（Swift + AppKit，`pet-macos`）和 **Windows 桌宠**（WPF，`pet-windows`）。macOS 桌宠当前 `0.5.8`；控制台 `0.6.6` 已本地集成、**未发布**；Windows `0.2.0` 成品已验收且最终源码已回灌入仓，等待发布。
 
 逐轮的详细记录（任务边界、验证数据、未验证项）在 [`docs/迭代记录.md`](docs/迭代记录.md)。
+
+## 未发布：控制台 0.6.6 — 2026-10-18
+
+- 未连接时给出引导：说明为什么没连上、下一步做什么、按平台去哪下载。连接失败先提示启动现有桌宠，再给下载入口；协议不匹配保留原错误；连上后整块收起。不把「未连接」断言成「未安装」。
+- 新增最小能力 `app/ui.open-external`（对应公开 SDK `hana.external.open`），只打开白名单里的两个固定 Release 附件地址。宿主拒绝或无此能力时，展示可选中、可手工复制的同一链接，不新增剪贴板或网络抓取能力。本机 localhost 声明与其余最小权限不变。
+- 安装说明只保留可校验的来源提示与系统安全提示，不再给出任何「打不开 = 还没上线」一类关于发布状态的推断。
+- 包内补齐许可与署名：`LICENSE`（MIT）、`assets/ATTRIBUTION.md`、`assets/CHARACTERS-LICENSE.md`，与仓库 canonical 文本逐字节相同。App 自带 README 同步改正：不再声称「archive 不含角色图片」或禁止一切对外分发，改为按 CC BY-NC-SA 4.0 说明允许非商业分发、需保留署名与相同方式共享。
+- 验证：`sh tools/run-checks.sh` exit 0（Node 153/153），专项 `panel-onboarding-probe` 为 `PANEL_ONBOARDING_OK`，含「已连接多行 → 宿主读取失败」的状态转换实测；官方 validator `--dir` 与最终包 `--archive` 均 0 error / 1 warning。
+- 仍未验证：真实 Hana 宿主里点击打开外链、Windows Release 附件的实际可下载性。本轮未推送、未打标签、未发 Release、未登记市场。
+
+## 未发布：Windows 0.2.0（单文件便携版）— 2026-10-18
+
+- 形态：**预编译单文件**，7 个角色 211 张 PNG 全部内嵌（`Assets.bin` + 偏移索引），解压双击即用；不再首次启动现场编译，不再依赖旁边的 `CrossPet/` 目录。
+- 运行时：`IPetAssetStore` 抽象 + `EmbeddedPetAssetStore`（按偏移在锁内 seek，不整块读入内存）与 `DirectoryPetAssetStore`（本地调试用）；DPI 开关从 sidecar config 移进 `Main`。
+- 协议兼容放宽：`/v3/snapshot` 的 `activity` 必填集收窄为 `status` + `lastActivityAt`，其余字段缺失视为 `null`；旧控制台不受影响。
+- 最终源码已回灌到 `pet-windows/`（含 `PetAssetStore.cs`）；素材由 canonical `assets/crosspet` 重建成 `102358834` 字节 blob，与已验收 exe 的 `embeddedArtworkBytes` 一致。
+- 构建入口重定向到仓库布局：`python3 tools/build-windows-portable.py`（单文件出包，需 Windows `csc`）、`python3 tools/run-windows-checks.py`（C# 合成检查，仅 Windows）、`node tools/package-windows-pet.mjs --prepare-assets`（macOS 素材准备）。旧的首次启动脚本与 sidecar config 退役，旧预览打包入口现在直接报错。
+- 验证边界：exe 编译与实机运行由作者本人在 Windows 实测；本仓库没有 Windows csc，**不把 macOS 侧检查当作 Windows 运行验收**。
+
+## 未发布：Windows 0.1.0-preview.1 — 2026-10-18（已被 0.2.0 取代）
+
+- 新增独立 Windows WPF 桌宠，保留 Hana 控制台和 macOS 代码，继续使用固定 IPv4 loopback 端口及完整 v3 协议。
+- 移植角色选择、状态过期、姿态/情绪/工作节奏、淡入淡出、点击和两帧拎起动画；提供透明置顶窗口、像素 alpha 命中、拖动、原生菜单、锁定和角落停靠。
+- 便携测试包解压双击启动，首次使用系统自带 .NET Framework 编译器生成 exe，并运行合成检查及全部图片加载检查；不要求安装 SDK、Node 或额外解码器。
+- 211 张目录内 WebP 转 PNG，每张比较解码后的像素；保留原始署名许可、来源目录和逐张转换哈希。
+- 验证边界：macOS 本地检查及转换/打包校验通过；Windows 首次编译、C# 测试、透明穿透、多屏/DPI 与真实 Hana 连接仍待 Windows 实机执行。本测试包不是已完成 Windows 验收的预编译安装包。
 
 ## 桌宠 0.5.8 — 2026-10-18
 
