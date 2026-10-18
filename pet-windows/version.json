@@ -1,0 +1,6 @@
+{
+  "version": "0.2.0",
+  "protocolVersion": 3,
+  "target": "Windows 10 1903+ / Windows 11 x64",
+  "distribution": "single-file-portable"
+}

@@ -1,0 +1,986 @@
+{
+  "schemaVersion": 1,
+  "kind": "windows-portable-source",
+  "version": "0.2.0",
+  "protocolVersion": 3,
+  "validation": {
+    "macOS": "asset-pixels-and-package-integrity",
+    "windows": "single-file-build-and-synthetic-checks"
+  },
+  "poseCount": 211,
+  "upstreamCount": 193,
+  "generatedCount": 18,
+  "files": [
+    {
+      "path": "CrossPet/ATTRIBUTION.md",
+      "sha256": "1a3bb3ab0bb385138739408a9423559fecd01899b91c92298deb3a08b63c6d7c"
+    },
+    {
+      "path": "CrossPet/build-manifest.json",
+      "sha256": "410196a355d4f1102c04cce97d681090def2e10426aca5d3e9635adaf399fbe1"
+    },
+    {
+      "path": "CrossPet/catalog.json",
+      "sha256": "14f9d1c267f1366166bd1ffdc1aebe29ecb0a2049594dbfe4c0bfc06da8236b2"
+    },
+    {
+      "path": "CrossPet/CHARACTERS-LICENSE.md",
+      "sha256": "74955217f00863066dcb74de92ffaa197986b79e975d1b99d5a6fc9cd4a0e977"
+    },
+    {
+      "path": "CrossPet/claude/asking.png",
+      "sha256": "ca42142e9d78d2520a0c9137f3482f430fe531372f5a2e21f87be84fd278d9af"
+    },
+    {
+      "path": "CrossPet/claude/busy_left.png",
+      "sha256": "61402d759389d50d11c34dcb6e7d3bb026973121ceec8529b0581b7a6e4f1127"
+    },
+    {
+      "path": "CrossPet/claude/busy_right.png",
+      "sha256": "d78bcad4e43e61a54a9491ee97567455ebcd326dfa5f77c46f2d957ee61a5fd9"
+    },
+    {
+      "path": "CrossPet/claude/clawd.png",
+      "sha256": "1f04cdd6904a21570d26b3324694345a2019b7746ab8bc91dd9fd547b0205fb9"
+    },
+    {
+      "path": "CrossPet/claude/compact.png",
+      "sha256": "e20543d4642aa941f589637defff441592eac46451666e5b4e789f1c4e9134f6"
+    },
+    {
+      "path": "CrossPet/claude/delegating.png",
+      "sha256": "76af6597a7543908dd175b6b667a8f5ae523e2eea2f5f50c82dd8b385274efbe"
+    },
+    {
+      "path": "CrossPet/claude/drawing.png",
+      "sha256": "750b248eb644922c194a1df2f188994b17e2b971184e6282d31617af996f3de4"
+    },
+    {
+      "path": "CrossPet/claude/happy-2.png",
+      "sha256": "7f07dcdb233e2d1e63beda037350a15be9029766989ba5d21b0fd547149740d6"
+    },
+    {
+      "path": "CrossPet/claude/idle-2.png",
+      "sha256": "f141870bc3a4199e3c8b51242c62b0f6e7c59e6bde39ae05dbeba295cb440e27"
+    },
+    {
+      "path": "CrossPet/claude/idle-3.png",
+      "sha256": "17e7b1a24e5c471b483341d49777efda47c05d769177a711f5f91c63a0d8f247"
+    },
+    {
+      "path": "CrossPet/claude/idle-blink.png",
+      "sha256": "02691bc98802c1b49d7395d5b49ee6c5936f14b548dd30fb696d41a33600c16d"
+    },
+    {
+      "path": "CrossPet/claude/idle.png",
+      "sha256": "a90c503032ab372e8d35a24330aebdad865a810676264c315d8066eadb5c2b22"
+    },
+    {
+      "path": "CrossPet/claude/listening.png",
+      "sha256": "f1f2c51524b4c05052cfc2ad4214eca32aff9a1583dfd9df65a780022bdb1642"
+    },
+    {
+      "path": "CrossPet/claude/oops.png",
+      "sha256": "df8e13b7d05a311d9015a258d2b4422262b1b023d7cfc0b1db79079354e0de70"
+    },
+    {
+      "path": "CrossPet/claude/picked-up-2.png",
+      "sha256": "01fba463858abbaaaebbb3c32d520ce4a2868b74472ae5677cfb37d705ec89df"
+    },
+    {
+      "path": "CrossPet/claude/picked-up.png",
+      "sha256": "070b97370adcfca811139f40d31320fcc55353f97c0681ea9513e4e8ee19b458"
+    },
+    {
+      "path": "CrossPet/claude/proud.png",
+      "sha256": "8c08a223714553fa6d9165f4920de3b539e59f72c414df567e55d3d96562488e"
+    },
+    {
+      "path": "CrossPet/claude/reading-2.png",
+      "sha256": "b5b7d1f3df58232ac43b381ec3705d484f7bc633725ae736920e6a717a5793bf"
+    },
+    {
+      "path": "CrossPet/claude/running.png",
+      "sha256": "0dd9b00ac71abbe81b3b03cf1c59080e1c7fc8377f91b762f208b64846a1e58f"
+    },
+    {
+      "path": "CrossPet/claude/searching.png",
+      "sha256": "10e3bbc00dab7fe29791e5411dc0ae2bcf1d4d75f8a404d0cc7ee08774127b2a"
+    },
+    {
+      "path": "CrossPet/claude/sleeping-2.png",
+      "sha256": "1282154e3ac3b55aae8d4f601fbf1482c976fb8a603fe65f6b9885c58659437c"
+    },
+    {
+      "path": "CrossPet/claude/sorry.png",
+      "sha256": "e89f76536657d5fe57d4722165fa4edf6c678baa65d26a5eb6916e9bea8f1d0b"
+    },
+    {
+      "path": "CrossPet/claude/surprised.png",
+      "sha256": "1e5afc4ad8c25b221ebf6c98db2815c305fb9f4f7ca85868c8fa24db25842d14"
+    },
+    {
+      "path": "CrossPet/claude/swamped_left.png",
+      "sha256": "29b5f76b7260032d5cf56fb75db7039ec489021d13c2f627432c5b43ce429a33"
+    },
+    {
+      "path": "CrossPet/claude/swamped_right.png",
+      "sha256": "34f3fb0516215a62c1e2ac495edcb3849e7c37bc556b120b83cfb112ca0bfbfd"
+    },
+    {
+      "path": "CrossPet/claude/thinking-2.png",
+      "sha256": "93d995bcfba84b5f843980d5bf2fc359c3fc567f1f19905cf8ba2a2472b22235"
+    },
+    {
+      "path": "CrossPet/claude/thinking.png",
+      "sha256": "6c2c60136e40a90147173f6d43e9feb935a849f0b3c420de9c1fc169248104e2"
+    },
+    {
+      "path": "CrossPet/claude/tired.png",
+      "sha256": "9e329591c50c9a65a9e4419e9b148e3c2689923700ba5210f1d87ff496fe2f55"
+    },
+    {
+      "path": "CrossPet/claude/writing.png",
+      "sha256": "badd0b2f445c165a92525dc0fdeb8e7326c7d9df31ae5aa2c3753e35f574bf7f"
+    },
+    {
+      "path": "CrossPet/deepseek/asking.png",
+      "sha256": "35370b86d1eae2cce6afb0af03c3e8acaea8329f939818de91a8ba111f5308e8"
+    },
+    {
+      "path": "CrossPet/deepseek/busy_left.png",
+      "sha256": "1d2d2d6dfcf07143b99b167e72030d913fa31e01865cb51249b06f324e495c46"
+    },
+    {
+      "path": "CrossPet/deepseek/busy_right.png",
+      "sha256": "88eb24414ef746fbe2359ef87d6a2a8398659dfa5a13a935be691769f0b1ebb6"
+    },
+    {
+      "path": "CrossPet/deepseek/compact.png",
+      "sha256": "ed36887385de0491f92a89d3665cf764162ff54ed4f5c81ffe7a0adc7aa1e007"
+    },
+    {
+      "path": "CrossPet/deepseek/deepthink.png",
+      "sha256": "216f4c0f2419cf69c89ffa6b077d43faba028ad0899007a360f25cb2468f7906"
+    },
+    {
+      "path": "CrossPet/deepseek/delegating.png",
+      "sha256": "c582a3717873fda877a13ae904c11a6fb8c7aa1a031b64cf4e88c258184eade9"
+    },
+    {
+      "path": "CrossPet/deepseek/drawing.png",
+      "sha256": "3873dfc3c87410a1dc718b83c0be33ab0b598113b263eba0c83a471b6df2b960"
+    },
+    {
+      "path": "CrossPet/deepseek/eat.png",
+      "sha256": "ff3ff859aff4f3e30303ec64dabc555485d8fd6eda3af536c5282906a7936d0a"
+    },
+    {
+      "path": "CrossPet/deepseek/feast.png",
+      "sha256": "970910cd15cbb850a9794b0c09706579f447b2b95f0386c228f45c51d12bfe17"
+    },
+    {
+      "path": "CrossPet/deepseek/happy.png",
+      "sha256": "41b10e9709bb8e202537a826cef2974c34b9ede0315640581f745b42c5bfe6f7"
+    },
+    {
+      "path": "CrossPet/deepseek/idle-2.png",
+      "sha256": "9209706c70ebeacc13f7286d68913d8a7d4edd98ee0f1b341ad5d1c457ab4db3"
+    },
+    {
+      "path": "CrossPet/deepseek/idle-3.png",
+      "sha256": "24d2575915136c98e39bfc22280a7b70b96bf9ce3695a49f7da1ecafb34e7c87"
+    },
+    {
+      "path": "CrossPet/deepseek/idle-blink.png",
+      "sha256": "239ecaa74ba36b54140a633e872dc21f095fa0ef64a6c909db90b1f9c6f506a3"
+    },
+    {
+      "path": "CrossPet/deepseek/idle.png",
+      "sha256": "aaf7fd283c460b9dec2320561c7d123ea509b5cadec1685ffefc4936909d5469"
+    },
+    {
+      "path": "CrossPet/deepseek/listening.png",
+      "sha256": "256a5f61b52af3b23dd0c418a6ef32c812363dacd9d9152b03b90183c70abf89"
+    },
+    {
+      "path": "CrossPet/deepseek/oops.png",
+      "sha256": "04ac4ce8f5184d58013aec376d0f1a23b31fa1246f0c4bcdb2a9f9257cfaf77b"
+    },
+    {
+      "path": "CrossPet/deepseek/picked-up-2.png",
+      "sha256": "2c10b70d96b5f61248e30c549047b01dd40132c0620da1d0efea5c1c956838a2"
+    },
+    {
+      "path": "CrossPet/deepseek/picked-up.png",
+      "sha256": "00c3305f54dc09f5f381627ede9de4ccea2a2127b7bede2f44399fafb56f74af"
+    },
+    {
+      "path": "CrossPet/deepseek/proud.png",
+      "sha256": "f863fa64fbcd993ad9c37bfe3d880dd1c6f3c2c913eead17b259758069dd5021"
+    },
+    {
+      "path": "CrossPet/deepseek/reading.png",
+      "sha256": "8e3f70c299bd1712fbb88294b366027e905a2182d67c7e5f33803349cce24e8f"
+    },
+    {
+      "path": "CrossPet/deepseek/running.png",
+      "sha256": "009f2ecf710ac4ddf41ce7af64e88eca3b7dc9448b45dc1566ca852477b8d27d"
+    },
+    {
+      "path": "CrossPet/deepseek/searching.png",
+      "sha256": "4cb11d508c7220b3f59c99abefd83fe923cc7abd70bbb204dd40e2ccb57e74ad"
+    },
+    {
+      "path": "CrossPet/deepseek/slack.png",
+      "sha256": "5a2233b169f7f7529d08e5519d992c7c357cec0baf89641b82775cee8759eb78"
+    },
+    {
+      "path": "CrossPet/deepseek/sleeping.png",
+      "sha256": "cb311243ba107a9090ff00aa8f5afa6ddeb2dbdb03cbee31c44d5533f67467ec"
+    },
+    {
+      "path": "CrossPet/deepseek/surprised.png",
+      "sha256": "57a690bef8f68312b539c24c57fd78052c981a248e41883e0d49f43013b36d8c"
+    },
+    {
+      "path": "CrossPet/deepseek/swamped_left.png",
+      "sha256": "b026fb2652f1b1ec5ad9090f8d5eb6ff0654062add6999850cf5d9da4cdd953e"
+    },
+    {
+      "path": "CrossPet/deepseek/swamped_right.png",
+      "sha256": "5b4f3bc59f1defc65ea21f8162d521513692910f2c10fcbd4677bd0f84f441b5"
+    },
+    {
+      "path": "CrossPet/deepseek/swim.png",
+      "sha256": "862dbb98a818acb07ff3ef3cc3a19f485ea7a438caf8e0b9db94c28811caf87c"
+    },
+    {
+      "path": "CrossPet/deepseek/thinking.png",
+      "sha256": "a9bd38bb87582769e6c61c4122472f9ac58c25c9cd8e6d0682cc00606b7f1a12"
+    },
+    {
+      "path": "CrossPet/deepseek/tired.png",
+      "sha256": "a042858376a031bcedaccdaaf6927dfccf67335011ca86d0dcfd68b870641b31"
+    },
+    {
+      "path": "CrossPet/deepseek/writing.png",
+      "sha256": "850a446901e1ca4abd13e94b40c75eae9e6ff2bc741bca4e226825b938f43580"
+    },
+    {
+      "path": "CrossPet/deepseek-hoodie/asking.png",
+      "sha256": "3bf11c15faaf4d81f1650fbfd103d3173051689e5cb3846b7db0727e23e7ca5b"
+    },
+    {
+      "path": "CrossPet/deepseek-hoodie/busy_left.png",
+      "sha256": "520141f4f192db70b0fb2c1657dc1463937bcb2709190bc16e8c4cd8d0a313a7"
+    },
+    {
+      "path": "CrossPet/deepseek-hoodie/busy_right.png",
+      "sha256": "12ee6c7e6240036ea8461d5ca9f8c76ed52f563ee9d9412b2b5ab40e10813054"
+    },
+    {
+      "path": "CrossPet/deepseek-hoodie/compact.png",
+      "sha256": "f64eea552c8616d32e6e87347fbe2a9037d39ad7ec1f05b5a3c70226c9373ce1"
+    },
+    {
+      "path": "CrossPet/deepseek-hoodie/deepthink.png",
+      "sha256": "867970bd7b05d20b3b99714a424aa3b34dd7de1285f57f08bf45a6206a97ea91"
+    },
+    {
+      "path": "CrossPet/deepseek-hoodie/delegating.png",
+      "sha256": "1cc3423c400ec6dcfd2c7768cf1a609648aef6fb4f1445f918ccf5bea2fcbf79"
+    },
+    {
+      "path": "CrossPet/deepseek-hoodie/drawing.png",
+      "sha256": "f7ff135035ed9091f50d7f327d302a75757d228edd4e82866fceb15e64dea0ef"
+    },
+    {
+      "path": "CrossPet/deepseek-hoodie/eat.png",
+      "sha256": "2acb26b8bb52a872b1f8252bab8233a52daf64403bdfe57c63dbaa18aa0a8374"
+    },
+    {
+      "path": "CrossPet/deepseek-hoodie/feast.png",
+      "sha256": "dfa5b1fa476dcb37104b62929fcc27480321bc94db504780e35e984786dfd008"
+    },
+    {
+      "path": "CrossPet/deepseek-hoodie/happy.png",
+      "sha256": "56cc64425dd41cebe5ed3fc4e65a9ec2f63bff31b474e5a293a8cfbb16a1d494"
+    },
+    {
+      "path": "CrossPet/deepseek-hoodie/idle-2.png",
+      "sha256": "4889c14cedff11932827a58cd544464ff6aa55faa1decdea58b4885a40144672"
+    },
+    {
+      "path": "CrossPet/deepseek-hoodie/idle-3.png",
+      "sha256": "df6d644a7aad67d503777a34737cf4fae7b6c46df0c888469ae5a431b5e0b0c9"
+    },
+    {
+      "path": "CrossPet/deepseek-hoodie/idle-blink.png",
+      "sha256": "8f063a7ff4864d0f0f009761c2ced840fe0185a0afd6ce3a5a8f088dbc9ed58a"
+    },
+    {
+      "path": "CrossPet/deepseek-hoodie/idle.png",
+      "sha256": "ddf71eb52cce3756100808a0b8b5b4735dd989ff59414d17cff554715326874e"
+    },
+    {
+      "path": "CrossPet/deepseek-hoodie/listening.png",
+      "sha256": "ed641ef12c6c2b40778dd95f0cd9a2c005ac3a96dbc0806099bbb3686e068ea7"
+    },
+    {
+      "path": "CrossPet/deepseek-hoodie/oops.png",
+      "sha256": "c032c14be760d6e4140524d521c9de8b1d1ea8d2d00e2721c55b8a9755221fc6"
+    },
+    {
+      "path": "CrossPet/deepseek-hoodie/picked-up-2.png",
+      "sha256": "29e7bcc22148244d6bf6314a57af56ffe2189d58d2c27a6e62d15fb700cad1a4"
+    },
+    {
+      "path": "CrossPet/deepseek-hoodie/picked-up.png",
+      "sha256": "ebc481383cf90b8fd8b8c0695f26485d0f42d88793b5ad57c09faa28c82ebfc8"
+    },
+    {
+      "path": "CrossPet/deepseek-hoodie/proud.png",
+      "sha256": "9384f4788a3394bbcf29ee2da51f15ee6016accaaa51ad4fc4391c9c9edc55b2"
+    },
+    {
+      "path": "CrossPet/deepseek-hoodie/reading.png",
+      "sha256": "1534cacccd1e2988bd1acf3ba1a926e279c6c5e4339c3e826e5ed525fb4dc605"
+    },
+    {
+      "path": "CrossPet/deepseek-hoodie/running.png",
+      "sha256": "34adbbfe46b2ebb042bf1066537717c2922387bff32076f372fa4756dc1c1cb3"
+    },
+    {
+      "path": "CrossPet/deepseek-hoodie/searching.png",
+      "sha256": "be2bb9567b77fd465ca38cf76f49c93376842ce5e42e1437aacb899b87bc716e"
+    },
+    {
+      "path": "CrossPet/deepseek-hoodie/slack.png",
+      "sha256": "16d46d3d85efdd8685652ab695f8f526796d9c130221c1d0c79aecc05472d0e7"
+    },
+    {
+      "path": "CrossPet/deepseek-hoodie/sleeping.png",
+      "sha256": "0119ff4cb94efe449c27fdb5d152eb672c8dc2793a446f24c3d16d6aa3009b2a"
+    },
+    {
+      "path": "CrossPet/deepseek-hoodie/surprised.png",
+      "sha256": "35e775f09279c05094018f8c526888a73d7f78daede2946732cdb5ec28c588b1"
+    },
+    {
+      "path": "CrossPet/deepseek-hoodie/swamped_left.png",
+      "sha256": "307e3162367a19aa81e6f621e71a3f02cc03accdfcd3796bd6912429b54b0403"
+    },
+    {
+      "path": "CrossPet/deepseek-hoodie/swamped_right.png",
+      "sha256": "506d0c3a7fd485179ffc1efa35e6e6c8d1c0c4d5d69bfdbcf12a52400b88377b"
+    },
+    {
+      "path": "CrossPet/deepseek-hoodie/swim.png",
+      "sha256": "ade8aad67bef16e3ff206c8fe7dd3584b9cf03e13dbc9dba88bc29daa35e7802"
+    },
+    {
+      "path": "CrossPet/deepseek-hoodie/thinking.png",
+      "sha256": "ce0f454fa1d6ca41b926b261688b7e3c8b647cc8ad9cc0a17c1e2677615ada44"
+    },
+    {
+      "path": "CrossPet/deepseek-hoodie/tired.png",
+      "sha256": "25c3d0377bb66e49eabb9f2d32503c2405dd5bc33cc49b0d2a1b7df18bbdeac1"
+    },
+    {
+      "path": "CrossPet/deepseek-hoodie/writing.png",
+      "sha256": "bd87742be891d56e9ff49cc9ddc30702d6fe96b3d78b242c39e8379f2a5bc4f1"
+    },
+    {
+      "path": "CrossPet/gemini/asking.png",
+      "sha256": "ce814e5e8d8eee6ffa863e370266dfa0ba9028162656bbd44d487afaa5389783"
+    },
+    {
+      "path": "CrossPet/gemini/busy_left.png",
+      "sha256": "d4e9fb7b60d6f13b4766a6fd2a3fa30a1cf9dd3662147e0cd11de1b302f5adcd"
+    },
+    {
+      "path": "CrossPet/gemini/busy_right.png",
+      "sha256": "733d68d7148cbed22a29cc8a63b554ee7aad67094642ebae42368c354e73c8db"
+    },
+    {
+      "path": "CrossPet/gemini/compact.png",
+      "sha256": "ee7cf87dd0f914cac0b8e5e7b236bd678617e1cb28a81217f423993de46e1bdc"
+    },
+    {
+      "path": "CrossPet/gemini/delegating.png",
+      "sha256": "b5259691ce7771db942b02d29af4baecbacb68a5260016f79f80f6f669c8b861"
+    },
+    {
+      "path": "CrossPet/gemini/drawing.png",
+      "sha256": "09843be7881b0262d4b44aceb6ca34f4260e0ae7d3e567dfb67bbdaa46b4df69"
+    },
+    {
+      "path": "CrossPet/gemini/float.png",
+      "sha256": "f902de9569ac09384e31a6b2a173ed894b830a29c0fbe584d05cb23262660208"
+    },
+    {
+      "path": "CrossPet/gemini/happy.png",
+      "sha256": "236125015f82e29563d13af94ed91b23b731be4bcf9b6d240d08fb7b5d92f251"
+    },
+    {
+      "path": "CrossPet/gemini/idle-2.png",
+      "sha256": "2a6898a44dbfa0696324edb1720cf6a7581fea7b6f6dc8c4ae19c8e2fce3c3f2"
+    },
+    {
+      "path": "CrossPet/gemini/idle-3.png",
+      "sha256": "b55877eac81865cf1b671f1984079d159a632fb4c3fcf2833a762439173ae9a2"
+    },
+    {
+      "path": "CrossPet/gemini/idle-blink.png",
+      "sha256": "13239c9e865f218cb76c3f45ad36b2ca4dc304e4b5d68989deb83501b5eb4a0a"
+    },
+    {
+      "path": "CrossPet/gemini/idle.png",
+      "sha256": "4746ee7a92b77a6ce945a4a976f061f0f8f050f4c2a7625af3725f48e55e263c"
+    },
+    {
+      "path": "CrossPet/gemini/listening.png",
+      "sha256": "117b73c3d382bdf02f242f9c010c5a65a06ace6efc850f6bdc0d156930c4c526"
+    },
+    {
+      "path": "CrossPet/gemini/oops.png",
+      "sha256": "b1e5e72b60132516ffd6d420dbe9a73e76866399868d32c18ef1c7a28703a1be"
+    },
+    {
+      "path": "CrossPet/gemini/picked-up-2.png",
+      "sha256": "ecdec272c54e30814df3b94088917263bd5d99e9e904fa786ac5010b1cc471da"
+    },
+    {
+      "path": "CrossPet/gemini/picked-up.png",
+      "sha256": "e46c826ff4f24a1d076b9952feb5b5a17f9d213714198f7136b1991e3afced27"
+    },
+    {
+      "path": "CrossPet/gemini/proud.png",
+      "sha256": "2851d93aa88e102646d615f60a084eee2f7ed6401f7b021eebe4d508dbbb5b80"
+    },
+    {
+      "path": "CrossPet/gemini/reading.png",
+      "sha256": "2b1601175500c09a4cc7f8217937cd7779cfd3667d104a7725b109fb8cc2af38"
+    },
+    {
+      "path": "CrossPet/gemini/running.png",
+      "sha256": "1fbcf5d1ff14789762f71b099dd53030cc68470bd19f99486bf853c4dbf11181"
+    },
+    {
+      "path": "CrossPet/gemini/searching.png",
+      "sha256": "97be148f250eec7991cad67dac3e2c1f03ea7f69fd57de4d0f2cd8c98c540c45"
+    },
+    {
+      "path": "CrossPet/gemini/sleeping.png",
+      "sha256": "a40115194007842ceab00d75ae3d3e76a57f8e7e9a6a7897cbe08ce3551bbf36"
+    },
+    {
+      "path": "CrossPet/gemini/surprised.png",
+      "sha256": "9bcf6d392abd46f2b92b1234034a9adf0863fc2d330e786879a50ad610047a4a"
+    },
+    {
+      "path": "CrossPet/gemini/swamped_left.png",
+      "sha256": "f816547eafd66010393ffa15e3efaa7790f51db4a39a8ad8d363951b878a8d35"
+    },
+    {
+      "path": "CrossPet/gemini/swamped_right.png",
+      "sha256": "9cf834cf745aa479576457d8e92990db43571e58213ecd12a8f21b37da4ce607"
+    },
+    {
+      "path": "CrossPet/gemini/thinking.png",
+      "sha256": "6e94734c7431dc0ac8f6f403684cec30cbaca7ab0fecf779e2a46fcdc06ca3aa"
+    },
+    {
+      "path": "CrossPet/gemini/tired.png",
+      "sha256": "46aadcb5893a1167f3f6e4a7f104bd648fb412f9421e1b64defcefbde1559b3f"
+    },
+    {
+      "path": "CrossPet/gemini/writing.png",
+      "sha256": "0ccc5972e20e21964bf3c7c878f36ef2cd7fd839fcdbc767bfcb7ebfd98ae4a2"
+    },
+    {
+      "path": "CrossPet/glm/asking.png",
+      "sha256": "2d250ea8171b155c8aac40eba7a112b5e721b813ca73a7a58b720cd762a6e103"
+    },
+    {
+      "path": "CrossPet/glm/busy_left.png",
+      "sha256": "9b6d7efdec93621d6107dcaba026e744913d0bd626c7502c1c749479d818bc49"
+    },
+    {
+      "path": "CrossPet/glm/busy_right.png",
+      "sha256": "62c8713a46c005461417a192c20cad126b5772ef9732f95c62e89d4fd74a265e"
+    },
+    {
+      "path": "CrossPet/glm/compact.png",
+      "sha256": "075a29d6fc925fd1cc464b29b83bc52b837f34b327cb095f563f57960916f3ce"
+    },
+    {
+      "path": "CrossPet/glm/delegating.png",
+      "sha256": "5425e1ebcef1bc478d503f9eabb7405d101e2b13d5e9fc89374c0e34bfe89448"
+    },
+    {
+      "path": "CrossPet/glm/drawing.png",
+      "sha256": "9cd9e2bbd23c1a0a344e280e09d1d81631f4ed98e4541a45d8132579f6098ce1"
+    },
+    {
+      "path": "CrossPet/glm/happy.png",
+      "sha256": "a1b6201208c88ca591fdcc90b4cac9187225d62835035cef4e6e42c2b77c641b"
+    },
+    {
+      "path": "CrossPet/glm/idle-2.png",
+      "sha256": "4b89a3b27dd4b7b07ddc31c9debb389b2870bd03d1e47efa9ecf7765324e24c9"
+    },
+    {
+      "path": "CrossPet/glm/idle-3.png",
+      "sha256": "2820b28aee1036b1affd37d5a432dc0807ff7c3f00516091b43ede58bcf2babe"
+    },
+    {
+      "path": "CrossPet/glm/idle-blink.png",
+      "sha256": "ec26fc1fac7f12e88fe65a7e82a7d56e9ada663cca4a795587a1f39259c57fad"
+    },
+    {
+      "path": "CrossPet/glm/idle.png",
+      "sha256": "79c91a3551c71d89af4cb971faa00172858872aace081e4bfbb26d139b86cd09"
+    },
+    {
+      "path": "CrossPet/glm/listening.png",
+      "sha256": "2c309d067f1c3d964e08554cd2a16276993240194ff6dc208a50711b24d7fb0c"
+    },
+    {
+      "path": "CrossPet/glm/masked.png",
+      "sha256": "942fddf8e2a648190bc9269621db5715b9b116c2a7b3a33fe721f52adf3557e9"
+    },
+    {
+      "path": "CrossPet/glm/oops.png",
+      "sha256": "0f9bc2268c5fbaa99a2b7294290c73a781e4679858a8b1bcf31400b2d9a58981"
+    },
+    {
+      "path": "CrossPet/glm/picked-up-2.png",
+      "sha256": "67ad723f249608503db17d7d343b96d2325211ac76cc568d8f64c61f3147999a"
+    },
+    {
+      "path": "CrossPet/glm/picked-up.png",
+      "sha256": "8e2b4bb1deb6621be4afe61c8f49e8d499a5b0d44e29f5351ab0dff261f16476"
+    },
+    {
+      "path": "CrossPet/glm/pricetag.png",
+      "sha256": "ca9c427a46eef011a1406984f1a24d289095b437c45317d3f1fa6ad6bd979b6d"
+    },
+    {
+      "path": "CrossPet/glm/proud.png",
+      "sha256": "c8a5882317c873d6d6efe48f22527b50d28a0d3a5d7a05a37c42af897f7057d9"
+    },
+    {
+      "path": "CrossPet/glm/reading.png",
+      "sha256": "492bc9a53b5c9cfc5ccf5da6473631b4756408274d3b1015c9a3cd0bfe8f1937"
+    },
+    {
+      "path": "CrossPet/glm/running.png",
+      "sha256": "bc6e15f007a4a1fd4e3df79d6bd16ba2695547fcc5cc3365f02af7172f9b2655"
+    },
+    {
+      "path": "CrossPet/glm/searching.png",
+      "sha256": "059597ef637f9df1fdeece66e54688cf52ebd5db77798b3f7b1a6b9c5cbeb803"
+    },
+    {
+      "path": "CrossPet/glm/sleeping.png",
+      "sha256": "6d4459952173104da2691aa09c05ea7045596eab6ff5aec444a9e4960280f631"
+    },
+    {
+      "path": "CrossPet/glm/soldout.png",
+      "sha256": "155eee45b02c90e5b4a2d0d33c96e7edb0da76bb858f77caa9f134c341eb80fd"
+    },
+    {
+      "path": "CrossPet/glm/surprised.png",
+      "sha256": "0bca0df5ccec39b37d5bb82072b527f24ac81347c7ff0bb6593e3d4736d3e95c"
+    },
+    {
+      "path": "CrossPet/glm/swamped_left.png",
+      "sha256": "2000d04d6b37d28954fd5bd95e8efea1a0173456f2ce394369161efea042dcc8"
+    },
+    {
+      "path": "CrossPet/glm/swamped_right.png",
+      "sha256": "256e324045a275f6077e74ef3b13da1139f432045b61720329dff5f8d7d69c69"
+    },
+    {
+      "path": "CrossPet/glm/thinking.png",
+      "sha256": "a2ddbd4ac8fb433e787ec044385ccda30f7387f0a8825a7d565be393f9f2f0ce"
+    },
+    {
+      "path": "CrossPet/glm/tired.png",
+      "sha256": "0faea4fd5ad6afd31d81b2fe28c90ab2e54cff7b84688c2b782a314fb6e28093"
+    },
+    {
+      "path": "CrossPet/glm/writing.png",
+      "sha256": "424a7c8f64a7e2dd31d8ca4df83a0e211177ed1316e9371483c2921890c20f83"
+    },
+    {
+      "path": "CrossPet/gpt/asking.png",
+      "sha256": "c99fe0b29387442cfff80969f33882c9b4fdea04d85e881de56d039f1ba5a74f"
+    },
+    {
+      "path": "CrossPet/gpt/busy_left.png",
+      "sha256": "c1c8897f0f3948ebd5fb015d86e94af4a0eebb9d038a54694ee5a7edc4fde9f4"
+    },
+    {
+      "path": "CrossPet/gpt/busy_right.png",
+      "sha256": "ae071c2c6d41423bc32e7f545e811ce5b00e9cd981068e35ced9ec0514d45206"
+    },
+    {
+      "path": "CrossPet/gpt/compact.png",
+      "sha256": "17a543bc275e4303933595e4215d059ea2703f421f959a3c26060d241f089ab9"
+    },
+    {
+      "path": "CrossPet/gpt/delegating.png",
+      "sha256": "4abfef41fdec9ab736aa775c0211ad3774087e08d1cc6d498928d1980642ea40"
+    },
+    {
+      "path": "CrossPet/gpt/drawing.png",
+      "sha256": "a4250abb21b1d1912edad00e5d9408177c2dbf7656c212489fa70e166f25f209"
+    },
+    {
+      "path": "CrossPet/gpt/happy.png",
+      "sha256": "604a89b4d1558615d6fdb4ef36e02a9aedfa01ed542eb5adde878a5627178e29"
+    },
+    {
+      "path": "CrossPet/gpt/idle-2.png",
+      "sha256": "aeed640929d07823ff9bfc1aa8deeab1b7baefd82977469ddfb834622b2f9188"
+    },
+    {
+      "path": "CrossPet/gpt/idle-3.png",
+      "sha256": "7484adbf90a437dd27d4950a2efde1933b548fb8200e1083f5f73e288b8e8fd6"
+    },
+    {
+      "path": "CrossPet/gpt/idle-blink.png",
+      "sha256": "dedc43e05b2eb1203eaf5a2af3409b841b6cf9fb4e106372de9a55a6c1a37762"
+    },
+    {
+      "path": "CrossPet/gpt/idle.png",
+      "sha256": "035964be0c2c109063dd4d78069dfc202bd6b3e19a1ed0978bb3bb4138e0104b"
+    },
+    {
+      "path": "CrossPet/gpt/listening.png",
+      "sha256": "2f7d93c2462e4513b93c4e87e9620c99075d77bbc6009f1decf87c78c2a87b7a"
+    },
+    {
+      "path": "CrossPet/gpt/oops.png",
+      "sha256": "9c4e52c421f31a76e9867aaa939680384153af5d29c161f6cd02e3b08b5e79dc"
+    },
+    {
+      "path": "CrossPet/gpt/picked-up-2.png",
+      "sha256": "0ba5454d3a44c479e3988d50305ce130a028a5427fbe669bd3363c4edac9f4c0"
+    },
+    {
+      "path": "CrossPet/gpt/picked-up.png",
+      "sha256": "7a6bdfe92f3789b750da19b595678105b057c7f7929a56a5423e4ad8fa45e6e4"
+    },
+    {
+      "path": "CrossPet/gpt/proud.png",
+      "sha256": "8300775c00b2f064311db321417121d90b2b9e7576890fd82ddfe81578996edc"
+    },
+    {
+      "path": "CrossPet/gpt/reading.png",
+      "sha256": "93ecd6f9eec9c0232da4544259d2c462dfc1619a28d1c78809004f988c4f1d00"
+    },
+    {
+      "path": "CrossPet/gpt/reset.png",
+      "sha256": "59c10646cef98bea1b3424f55c4d438775f6702e84986179b7455abb7d6973e9"
+    },
+    {
+      "path": "CrossPet/gpt/reset_bell.png",
+      "sha256": "e1891052894b8fb5abc506cea8755bc252748262777aa3b3f7f26259d25832bb"
+    },
+    {
+      "path": "CrossPet/gpt/reset_check.png",
+      "sha256": "a40bcf8330bbdbe281584f0b2547be70d83bbcd21ee831f91b2002bb57b87472"
+    },
+    {
+      "path": "CrossPet/gpt/reset_hope.png",
+      "sha256": "d1148c41b74d933b63a1d3eacf27787e6b7f4f0a49b97a4668fb33a5eb89c032"
+    },
+    {
+      "path": "CrossPet/gpt/reset_maybe.png",
+      "sha256": "d48b7956b2a7431cd132fd9ac6d8b336ac38d5f87bbc92dc6e18ea793c4852a5"
+    },
+    {
+      "path": "CrossPet/gpt/reset_nope.png",
+      "sha256": "12541c120847ca0d89cd7a826137659edd4d5d4d690beaaa17d003fbbff6621b"
+    },
+    {
+      "path": "CrossPet/gpt/running.png",
+      "sha256": "a6e30990a0a0261b08f5b94b9a4c1928c26f95fdd426cc4a03cf1885e7ef9144"
+    },
+    {
+      "path": "CrossPet/gpt/searching.png",
+      "sha256": "041deed9d06ae3f6a6a3c3a5a600ccc2b3de4b8f349087b2b307899136b52bd8"
+    },
+    {
+      "path": "CrossPet/gpt/sleeping.png",
+      "sha256": "4d4e1c11111933fa3de5ced4e75bc2bb43d5dc9656a3bf3ed09dc6a5925b9ee2"
+    },
+    {
+      "path": "CrossPet/gpt/surprised.png",
+      "sha256": "8280e54d57c259f3ebb6435a89ac56d752d58965a4cec25a98d7981334b43368"
+    },
+    {
+      "path": "CrossPet/gpt/swamped_left.png",
+      "sha256": "ea73a0a0b043bb5770d47587723b2a89f00ca8f1c4589db9e120f70ab6e99d57"
+    },
+    {
+      "path": "CrossPet/gpt/swamped_right.png",
+      "sha256": "a4908cec497a7ce0e7ebd077aa3fb3a7f2d13f36bee5b082751749a9a56d1f9a"
+    },
+    {
+      "path": "CrossPet/gpt/thinking.png",
+      "sha256": "53980dc680f8e7f0407966f2463d1cb5bc5c845ab0c76eed018a92eddaf3d428"
+    },
+    {
+      "path": "CrossPet/gpt/tired.png",
+      "sha256": "cecfc5933779a94d4ebdd5530abbee971752ae4ce1262172410940e287eab23b"
+    },
+    {
+      "path": "CrossPet/gpt/writing.png",
+      "sha256": "6aae8465e356a0a30c9f99edbdec5f8b454af58e0ad1f503c141d58dd413b1a8"
+    },
+    {
+      "path": "CrossPet/gpt-onesie/asking.png",
+      "sha256": "c054f4f7b9c85c1a247045b7004f5dd638335ac4e2b7a1751649550ab43d6929"
+    },
+    {
+      "path": "CrossPet/gpt-onesie/busy_left.png",
+      "sha256": "804ab896d27310e41c179e72e5b75228f4767df781649fbe0c4d94e78a65bc80"
+    },
+    {
+      "path": "CrossPet/gpt-onesie/busy_right.png",
+      "sha256": "c4869bbbb130f8e6851448b3688d2b47380ea469cd6e1ef77803b32fb2981f74"
+    },
+    {
+      "path": "CrossPet/gpt-onesie/compact.png",
+      "sha256": "76000ca613bf3aba98d5fb89a73f0c0590c780966595f491482daf130279af84"
+    },
+    {
+      "path": "CrossPet/gpt-onesie/delegating.png",
+      "sha256": "cf08ced121a2fad4e9ce7dc730b4eb1df39267186e67303e6f44a93c3315f977"
+    },
+    {
+      "path": "CrossPet/gpt-onesie/drawing.png",
+      "sha256": "4b77d8b057e2b7839d285d538be718943c431f4098f21ea90a2ee1275e1f8833"
+    },
+    {
+      "path": "CrossPet/gpt-onesie/happy.png",
+      "sha256": "48e44ebe38c2c8c7b3cfceaf2db2805f45e139dd4d612d6fde1fa72a0ec07bf0"
+    },
+    {
+      "path": "CrossPet/gpt-onesie/idle-2.png",
+      "sha256": "2d2cc168439d32589dadceffa4af776340142b77c6de603abe3697c712207a4f"
+    },
+    {
+      "path": "CrossPet/gpt-onesie/idle-3.png",
+      "sha256": "a32f4fdc7ae6bb3621d75df8149dd472560ee013ad9bbd2e3ca0fbc44aa90bef"
+    },
+    {
+      "path": "CrossPet/gpt-onesie/idle-blink.png",
+      "sha256": "5fce4cd940407e74065fabefc74d902086a09f01c78b67f39fa42aa14d558e9a"
+    },
+    {
+      "path": "CrossPet/gpt-onesie/idle.png",
+      "sha256": "ce666ad433d008ef49dc57d29b4a768569c02a6101879e3b71dfe5135a8fa7a1"
+    },
+    {
+      "path": "CrossPet/gpt-onesie/listening.png",
+      "sha256": "e28525351b3c0075b13151d6a0e14278bcf3a143b5a2914e7c48314f4caf84b8"
+    },
+    {
+      "path": "CrossPet/gpt-onesie/oops.png",
+      "sha256": "d8c61bc91fbe7a8a395e22549152d992182e51d6ce372b2be340246aa843a7e5"
+    },
+    {
+      "path": "CrossPet/gpt-onesie/picked-up-2.png",
+      "sha256": "123c361629a9015d9dea447037fcdce1be22b325e21ef9b4ec2b13fd5cd5ee1b"
+    },
+    {
+      "path": "CrossPet/gpt-onesie/picked-up.png",
+      "sha256": "1b0f33e3072000a3e226d4e2469dafa30dc696325709aaa08e136656ff7ed64e"
+    },
+    {
+      "path": "CrossPet/gpt-onesie/proud.png",
+      "sha256": "fa22196612b347e23a6b35af541962c21ac0dc307b1c294652d9ded148c0a042"
+    },
+    {
+      "path": "CrossPet/gpt-onesie/reading.png",
+      "sha256": "74b1e059d1890f0e542f65dc397f7ba9e9c9304bd625e70b2468384db095d5fb"
+    },
+    {
+      "path": "CrossPet/gpt-onesie/reset.png",
+      "sha256": "c3d3564f03dd22ca0b0bae65e7196877367bbe8ca988a29e4bee13308ad406a1"
+    },
+    {
+      "path": "CrossPet/gpt-onesie/reset_bell.png",
+      "sha256": "9d2210cfd0297f0a446c6318d2170c0fc6a0a23ea386d74482fe89bfff24ebca"
+    },
+    {
+      "path": "CrossPet/gpt-onesie/reset_check.png",
+      "sha256": "539b43f87c3ea4b2dabdfbd2b0fe900abddbafbdca2c2cd53f78e163133d6c75"
+    },
+    {
+      "path": "CrossPet/gpt-onesie/reset_hope.png",
+      "sha256": "214f0cf7763be5f4465ddb0b0c9e164305f28db891167fac9a615f1a5abafa24"
+    },
+    {
+      "path": "CrossPet/gpt-onesie/reset_maybe.png",
+      "sha256": "df599b3e15a2014886e15e94ce0eee11abf5ddb9e5e0c8616a8c3e0c19fbbd7b"
+    },
+    {
+      "path": "CrossPet/gpt-onesie/reset_nope.png",
+      "sha256": "19fd94917c30607502b9566c6095d9fb2fb779a54acf7aaddc837328abfedf6c"
+    },
+    {
+      "path": "CrossPet/gpt-onesie/running.png",
+      "sha256": "1fe8fe0b611ec85c0c2a7d6c2a7466d4c900e8977d38216247dddfcd32d24396"
+    },
+    {
+      "path": "CrossPet/gpt-onesie/searching.png",
+      "sha256": "4117f1b809e4de1f375fe5ef2d76da70cc2d2399a50a96b7ede590c190c01bbb"
+    },
+    {
+      "path": "CrossPet/gpt-onesie/sleeping.png",
+      "sha256": "a4f409ba65acf7f9f673371a7b5335e3e899fe17e81f11a0fa1425f0edc9df14"
+    },
+    {
+      "path": "CrossPet/gpt-onesie/surprised.png",
+      "sha256": "0a9809c2406dac094cccf75ec4c21520c5e31acad0cfb6bd5ef192e9c28c8355"
+    },
+    {
+      "path": "CrossPet/gpt-onesie/swamped_left.png",
+      "sha256": "b7ab179bb9865001243f6d851e8f24e91b87b39b9843e23eacb8512c06f40269"
+    },
+    {
+      "path": "CrossPet/gpt-onesie/swamped_right.png",
+      "sha256": "ce908b0d248f0e75f3af1583bae786249d3de483ab70fd58f6f017aa60bbda99"
+    },
+    {
+      "path": "CrossPet/gpt-onesie/thinking.png",
+      "sha256": "45dd441b29880c66d6419f997f81a3c8a934321609860742fbfe96cbddf84664"
+    },
+    {
+      "path": "CrossPet/gpt-onesie/tired.png",
+      "sha256": "f83b8f1071edebdf909d3d27ff05ebf2ec8b730528c5d597580473c69856bb27"
+    },
+    {
+      "path": "CrossPet/gpt-onesie/writing.png",
+      "sha256": "cedb48e6980e57c2dd2f1ee619e65f2ee5aaf738d46b952853c281a10902ceea"
+    },
+    {
+      "path": "CrossPet/source-catalog.json",
+      "sha256": "1f64f2986c5a6cf18d640227d369b2640b2d7c041c3f3671c33d1f8e64601775"
+    },
+    {
+      "path": "CrossPet/WINDOWS-ASSETS.md",
+      "sha256": "ad1419cb15db6997544dff7eee8193520c23a870016ce2477e159e873f2a98a5"
+    },
+    {
+      "path": "LICENSE",
+      "sha256": "9d578e4ac85405c8066a2fda23609fc31864686583b4d1cba50d44325d7f982a"
+    },
+    {
+      "path": "package-manifest.json",
+      "sha256": "5827136caff76e3a2429ced708675c07674f4ff647ae05c828184ca70d39275f"
+    },
+    {
+      "path": "README.md",
+      "sha256": "8244511e97b9c99bd15dfcff74c6a86b2d9231d4cd72ffe43214f48b705f9c34"
+    },
+    {
+      "path": "Resources/App.ico",
+      "sha256": "d13731f929d7265081e4f491d1185e8a9726078ab9208eff01ea0be2b9bf3337"
+    },
+    {
+      "path": "Resources/app.manifest",
+      "sha256": "bb6549255203d466a8f2a71217e13d914e42cb09c0556a5b90438a9f1b3e33d7"
+    },
+    {
+      "path": "src/HanaDesktopPet.Core/Animation/PetAnimator.cs",
+      "sha256": "9af92225b3acc4be9582ac231439e5b6401b7135523bce25d43cd3c580e1d84c"
+    },
+    {
+      "path": "src/HanaDesktopPet.Core/Animation/PetPosePlanner.cs",
+      "sha256": "0eeeba4731f5a1f8dbe4e3e889411929cc10b423d5635076837b34f4fda511bd"
+    },
+    {
+      "path": "src/HanaDesktopPet.Core/Animation/PetPoseTimeline.cs",
+      "sha256": "f34f50b19a6149972ceb09415eff5653c97a20ac47d39b8b8a8ac1d21f336171"
+    },
+    {
+      "path": "src/HanaDesktopPet.Core/Animation/PetWorkPoseScheduler.cs",
+      "sha256": "17c5c419f8a8002b2b1deeb1610438b49a0ac2cbfac3563a22d75204d4effed2"
+    },
+    {
+      "path": "src/HanaDesktopPet.Core/Protocol/HTTPCodec.cs",
+      "sha256": "009d3078c1e79a56063c62b9ba8b43aa1099fae464e428e254ed6a6a3e7ac79d"
+    },
+    {
+      "path": "src/HanaDesktopPet.Core/Protocol/LocalHTTPServer.cs",
+      "sha256": "82a4942332eface7bec52ccc2b8bbee5638c69e27573361b8485ab1c1c0f23db"
+    },
+    {
+      "path": "src/HanaDesktopPet.Core/Protocol/PetAPI.cs",
+      "sha256": "a2ad8ab30645fdd744669b5ba8858aeee92bb21aaf41a519e65033c06a92e467"
+    },
+    {
+      "path": "src/HanaDesktopPet.Core/State/PetStateStore.cs",
+      "sha256": "9703f1639a90309642aa36086a373fe9ff97e5ea7e86f3ef169bcb7717839607"
+    },
+    {
+      "path": "src/HanaDesktopPet.Windows/NativeMethods.cs",
+      "sha256": "6c56850127a689c63f4694c45c3efcbb8f1db7dfb1139e766738d7af611242f2"
+    },
+    {
+      "path": "src/HanaDesktopPet.Windows/PetArtworkCatalog.cs",
+      "sha256": "a4dcb95c748f3440cfb5006f0de1628dbc01ea7a4dfeb7d5b5f8f8b9b7c45f45"
+    },
+    {
+      "path": "src/HanaDesktopPet.Windows/PetAssetStore.cs",
+      "sha256": "96387ddf2a061ceab1cdd69b1b9fe743d43dfdcaaa31e846bbb780b8826e1db6"
+    },
+    {
+      "path": "src/HanaDesktopPet.Windows/PetPreferences.cs",
+      "sha256": "e16a211a34a8678a7f5346497cd6c8f39a12473b1f58f7bc899ac22e47729bd2"
+    },
+    {
+      "path": "src/HanaDesktopPet.Windows/PetWindow.cs",
+      "sha256": "b75b4815e434e5050bad0c6ddb5d8de7becb7fd1b207ffed7d4089e658f20400"
+    },
+    {
+      "path": "src/HanaDesktopPet.Windows/Program.cs",
+      "sha256": "f9668005c69887acbdf830190b26983cccd7088869a5fc2a96cddcc30c29eaeb"
+    },
+    {
+      "path": "tests/AnimationChecks.cs",
+      "sha256": "8e18343ebdaaf2482b06056eff5bd968216ecd7cb18e39a68d12d9f4722a6bce"
+    },
+    {
+      "path": "tests/Program.cs",
+      "sha256": "9c9e070e10cbf0bc613a0a5779b90d3dbfa63caba77535b3d43b5559719db20c"
+    },
+    {
+      "path": "tests/ProtocolChecks.cs",
+      "sha256": "04c9f20e4152b8aca8d6285278b033379809a00a42776d2e1aea6f58fa0822fb"
+    },
+    {
+      "path": "tests/TransportChecks.cs",
+      "sha256": "9e3cc90f132df9a373d7bb0ec0d6721327c2eedd289bf6dd71326081d5b78567"
+    },
+    {
+      "path": "version.json",
+      "sha256": "2391e12b7cced5504cbb1e290094acdfad20eee5e8a671c22ff732f01810db63"
+    }
+  ],
+  "distribution": "single-file-portable",
+  "executable": {
+    "name": "HanaDesktopPet.exe",
+    "sha256": "bbd053a97eaeff02b6e2695b065fa74f5863ece53920b196019940a16c5ba705",
+    "bytes": 102724096,
+    "embeddedArtworkBytes": 102358834
+  }
+}
