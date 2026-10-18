@@ -31,13 +31,29 @@ async function mountPanel(store) {
       tagName: tag, children: [], _text: "", value: "", checked: false, disabled: false,
       dataset: {}, style: { setProperty() {} }, className: "",
       _replaceCount: 0,
+      parentNode: null,
       get textContent() { return this._text; },
       set textContent(v) { this._text = String(v); },
-      append(...kids) { this.children.push(...kids); },
-      appendChild(k) { this.children.push(k); return k; },
+      append(...kids) { for (const kid of kids) { this.children.push(kid); kid.parentNode = this; } },
+      appendChild(k) { this.children.push(k); k.parentNode = this; return k; },
+      insertBefore(child, reference) {
+        const index = reference ? this.children.indexOf(reference) : -1;
+        if (index >= 0) this.children.splice(index, 0, child);
+        else this.children.push(child);
+        child.parentNode = this;
+        return child;
+      },
+      remove() {
+        const parent = this.parentNode;
+        if (!parent) return;
+        const index = parent.children.indexOf(this);
+        if (index >= 0) parent.children.splice(index, 1);
+        this.parentNode = null;
+      },
       replaceChildren(...kids) {
         this._replaceCount += 1;
         this.children = kids.flatMap((k) => (k && k.tagName === "fragment" ? k.children : [k]));
+        for (const kid of this.children) kid.parentNode = this;
       },
       addEventListener(type, fn) {
         if (!listeners.has(this)) listeners.set(this, new Map());

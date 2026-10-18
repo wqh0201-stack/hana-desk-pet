@@ -51,6 +51,7 @@
   --hk-hover: color-mix(in srgb, var(--hk-accent) 8%, var(--hk-surface));
   --hk-current: color-mix(in srgb, var(--hk-accent) 13%, var(--hk-surface));
   --hk-surface-soft: color-mix(in srgb, var(--hk-surface) 82%, var(--hk-bg));
+  --hk-thumb-plate: color-mix(in srgb, var(--hk-neutral-bg) 26%, transparent);
   --hk-shadow: color-mix(in srgb, var(--hk-text) 20%, transparent);
   --hk-neutral-bg: var(--fallback-neutral-bg);
   --hk-neutral-text: var(--fallback-neutral-text);
@@ -201,7 +202,7 @@ img { max-width: 100%; height: auto; }
 .controller {
   display: flex;
   flex-direction: column;
-  gap: 7px;
+  gap: 6px;
   width: 100%;
   max-width: 640px;
   height: 100vh;
@@ -210,12 +211,14 @@ img { max-width: 100%; height: auto; }
   padding: 9px 12px;
   overflow: hidden;
 }
+
+/* 连接条只表达连接，不再重复会话名和业务状态。 */
 .connection-bar {
   display: flex;
   flex: 0 0 auto;
   align-items: center;
   gap: 8px;
-  min-height: 34px;
+  min-height: 36px;
   padding: 5px 10px;
   border: 1px solid var(--hk-border);
   border-radius: 10px;
@@ -248,21 +251,27 @@ img { max-width: 100%; height: auto; }
 .connection-state[data-status="error"] { color: var(--hk-status-error); }
 .connection-state[data-status="offline"]::before,
 .connection-state[data-status="error"]::before { background: var(--hk-status-error-dot); }
-.follow-context {
+.connection-note {
   min-width: 0;
   overflow: hidden;
   color: var(--hk-muted);
-  font-size: 11.5px;
-  font-weight: 600;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  font-size: 10.5px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
 }
 .toggle {
   display: inline-flex;
   flex: none;
   align-items: center;
+  gap: 6px;
   margin-left: auto;
   cursor: pointer;
+}
+.toggle-label {
+  color: var(--hk-muted);
+  font-size: 10.5px;
+  font-weight: 600;
+  white-space: nowrap;
 }
 .toggle input {
   flex: 0 0 1px;
@@ -304,6 +313,7 @@ img { max-width: 100%; height: auto; }
   outline: 3px solid var(--hk-accent);
   outline-offset: 3px;
 }
+
 .panel-notice {
   flex: 0 0 auto;
   margin: 0;
@@ -325,14 +335,16 @@ img { max-width: 100%; height: auto; }
   line-height: 1.4;
   overflow-wrap: anywhere;
 }
+
+/* 主卡：角色名是第一视觉，会话是第二层，时间只出现一次。 */
 .stage {
   display: grid;
   flex: 0 0 auto;
-  grid-template-columns: 128px minmax(0, 1fr);
+  grid-template-columns: 164px minmax(0, 1fr);
   align-items: center;
   gap: 14px;
   margin-top: 0;
-  padding: 8px 14px;
+  padding: 6px 14px;
   overflow: hidden;
   border: 1px solid var(--hk-border);
   border-radius: 14px;
@@ -345,13 +357,23 @@ img { max-width: 100%; height: auto; }
   align-items: center;
   justify-content: center;
 }
+/*
+ * The frame aspect ratio covers the widest catalog pose (730x640). With
+ * object-fit: contain, every pose is then height-limited, so the pet keeps the
+ * same scale instead of shrinking whenever a pose is drawn on a wider canvas.
+ * This mirrors PetCharacterLayout.maximumAspectRatio on the native side.
+ */
 .stage-image-frame {
   position: relative;
-  width: min(100%, 128px);
-  aspect-ratio: 570 / 640;
+  width: 164px;
+  max-width: 100%;
+  aspect-ratio: 730 / 640;
   margin-inline: auto;
 }
+/* The frame owns the canvas size; a narrower pose must not resize the whole card. */
 .stage-image-frame img {
+  position: absolute;
+  inset: 0;
   display: block;
   width: 100%;
   max-width: 100%;
@@ -371,23 +393,6 @@ img { max-width: 100%; height: auto; }
   font-size: 9px;
   line-height: 1.2;
 }
-.pose-caption {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  max-width: 100%;
-  margin: 0;
-  color: var(--hk-light);
-  font-size: 10px;
-  white-space: nowrap;
-}
-.pose-connection {
-  overflow: hidden;
-  color: var(--hk-muted);
-  font-size: 10px;
-  text-overflow: ellipsis;
-}
-.pose-name { color: var(--hk-light); font-size: 10px; }
 .stage-copy {
   display: flex;
   width: 100%;
@@ -400,36 +405,73 @@ img { max-width: 100%; height: auto; }
   display: flex;
   align-items: flex-start;
   gap: 8px;
-  margin-bottom: 2px;
+  margin-bottom: 1px;
 }
 .stage-copy h1 {
   flex: 1 1 auto;
   min-width: 0;
+  display: -webkit-box;
   margin: 0;
+  overflow: hidden;
   overflow-wrap: anywhere;
   color: var(--hk-text);
-  font-size: 16px;
+  font-size: 18px;
   font-weight: 700;
   line-height: 1.3;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
 }
-.stage-agent, .stage-updated {
+.stage-follow {
+  display: -webkit-box;
+  margin: 0;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  color: var(--hk-text);
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.4;
+  text-wrap: pretty;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+.stage-agent {
   margin: 0;
   overflow: hidden;
   color: var(--hk-muted);
-  font-size: 11px;
-  line-height: 1.45;
+  font-size: 11.5px;
+  line-height: 1.4;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.state-line {
+.pose-caption {
   display: flex;
   align-items: center;
-  gap: 7px;
-  margin: 7px 0 5px;
-  color: var(--hk-muted);
-  font-size: 10.5px;
+  gap: 0;
+  max-width: 100%;
+  margin: 1px 0 0;
+  color: var(--hk-light);
+  font-size: 11px;
+  line-height: 1.35;
+  white-space: nowrap;
 }
-.state-line > span { flex: none; }
+.pose-label { flex: none; color: var(--hk-light); }
+.pose-name { flex: none; margin-right: 0; color: var(--hk-muted); font-weight: 600; }
+.pose-connection {
+  min-width: 0;
+  margin-left: 6px;
+  padding-left: 6px;
+  overflow: hidden;
+  border-left: 1px solid var(--hk-border);
+  color: var(--hk-light);
+  text-overflow: ellipsis;
+}
+.role-sync {
+  margin: 0;
+  color: var(--hk-warning-text);
+  font-size: 10.5px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
 .status-pill {
   display: inline-flex;
   flex: none;
@@ -450,13 +492,15 @@ img { max-width: 100%; height: auto; }
 }
 .status-pill.success { color: var(--hk-success-text); background: var(--hk-success-bg); }
 .status-pill.error { color: var(--hk-error-text); background: var(--hk-error-bg); }
+
+/* 会话列表：跟随目标一眼可见，普通行只留一个状态胶囊。 */
 .session-panel {
   display: flex;
   flex: 1 1 auto;
   flex-direction: column;
   min-height: 0;
   margin-top: 0;
-  padding: 7px 12px 8px;
+  padding: 6px 12px 7px;
   border: 1px solid var(--hk-border);
   border-radius: var(--radius-l);
   background: var(--hk-surface);
@@ -469,7 +513,7 @@ img { max-width: 100%; height: auto; }
   justify-content: space-between;
   gap: 10px;
   flex: 0 0 auto;
-  margin-bottom: 4px;
+  margin-bottom: 3px;
 }
 h2 {
   margin: 0;
@@ -516,7 +560,7 @@ h2 {
   display: flex;
   flex: 1 1 auto;
   flex-direction: column;
-  gap: 4px;
+  gap: 3px;
   min-height: 0;
   margin: 0;
   padding: 0 2px 0 0;
@@ -526,19 +570,15 @@ h2 {
   scrollbar-color: var(--hk-border-strong) transparent;
   scrollbar-width: thin;
 }
-/* 会话数量写在标题里，列表高度对齐整行，不需要额外的渐隐提示。 */
-.sessions.is-scrollable {
-  mask-image: none;
-}
 .session { min-width: 0; margin: 0; }
 .session-button {
   display: flex;
   width: 100%;
-  min-height: 37px;
+  min-height: 44px;
   align-items: center;
-  gap: 7px;
-  padding: 4px 8px;
-  border: 1px solid var(--hk-border-soft);
+  gap: 8px;
+  padding: 4px 9px;
+  border: 1px solid transparent;
   border-radius: var(--radius-m);
   color: var(--hk-text);
   background: var(--hk-surface-soft);
@@ -549,16 +589,17 @@ h2 {
   border-color: var(--hk-border-strong);
   background: var(--hk-hover);
 }
-.session-button[aria-pressed="true"] {
-  border-color: var(--hk-accent);
+.session-button[data-followed="true"] {
+  border-color: transparent;
   background: var(--hk-current);
+  box-shadow: inset 3px 0 0 var(--hk-accent);
 }
 .session-copy { flex: 1 1 auto; min-width: 0; }
 .session-title {
   display: block;
   overflow: hidden;
   color: var(--hk-text);
-  font-size: 11.5px;
+  font-size: 13px;
   font-weight: 650;
   line-height: 1.3;
   text-overflow: ellipsis;
@@ -569,23 +610,21 @@ h2 {
   margin-top: 1px;
   overflow: hidden;
   color: var(--hk-muted);
-  font-size: 10px;
+  font-size: 11.5px;
   line-height: 1.3;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.session-markers { display: flex; flex: none; align-items: center; gap: 4px; }
 .session-marker {
-  padding: 2px 5px;
+  flex: none;
+  padding: 2px 6px;
   border-radius: 999px;
-  color: var(--hk-neutral-text);
-  background: var(--hk-neutral-bg);
-  font-size: 9px;
+  color: var(--hk-info-text);
+  background: var(--hk-info-bg);
+  font-size: 9.5px;
   font-weight: 650;
   white-space: nowrap;
 }
-.session-marker.current { color: var(--hk-success-text); background: var(--hk-success-bg); }
-.session-marker.followed { color: var(--hk-info-text); background: var(--hk-info-bg); }
 .empty {
   margin: auto 0;
   padding: 12px 6px;
@@ -593,6 +632,8 @@ h2 {
   font-size: 11px;
   text-align: center;
 }
+
+/* 角色条：7 列一屏见全，选中项浅底 + 描边 + 加粗名字。 */
 .roles-panel {
   flex: 0 0 auto;
   margin-top: 0;
@@ -601,8 +642,8 @@ h2 {
   border-radius: var(--radius-l);
   background: var(--hk-surface);
 }
-.compact-heading { margin-bottom: 4px; }
-.compact-heading > span { color: var(--hk-light); font-size: 10px; }
+.compact-heading { margin-bottom: 3px; }
+.compact-heading > span { color: var(--hk-light); font-size: 10.5px; }
 .role-options {
   display: grid;
   grid-template-columns: repeat(7, minmax(0, 1fr));
@@ -637,12 +678,18 @@ h2 {
   border-color: var(--hk-accent);
   background: var(--hk-current);
 }
+.role-option[aria-pressed="true"] .role-name {
+  color: var(--hk-text);
+  font-weight: 700;
+}
 .role-thumb {
   display: block;
   width: auto;
   max-width: 100%;
-  height: 74px;
+  height: 66px;
   margin-inline: auto;
+  border-radius: 8px;
+  background: var(--hk-thumb-plate);
   object-fit: contain;
   object-position: center bottom;
 }
@@ -651,12 +698,14 @@ h2 {
   width: 100%;
   overflow: hidden;
   color: var(--hk-muted);
-  font-size: 9.5px;
+  font-size: 11px;
   line-height: 1.35;
   text-align: center;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/* 诊断默认折叠；展开后明细区限高内滚，是一屏定高规则的显式例外。 */
 .diagnostics {
   flex: 0 0 auto;
   margin-top: 0;
@@ -664,7 +713,7 @@ h2 {
   color: var(--hk-muted);
 }
 .diagnostics summary {
-  min-height: 26px;
+  min-height: 28px;
   padding: 5px 2px 3px;
   color: var(--hk-text);
   font-size: 10.5px;
@@ -687,8 +736,15 @@ h2 {
   margin: 0;
   padding: 0 3px 4px;
 }
+.diagnostics[open] .diagnostic-grid {
+  max-height: 96px;
+  overflow-y: auto;
+  padding-right: 6px;
+  scrollbar-color: var(--hk-border-strong) transparent;
+  scrollbar-width: thin;
+}
 .diagnostic-grid > div { min-width: 0; }
-.diagnostic-grid dt { margin-bottom: 2px; color: var(--hk-light); font-size: 9px; }
+.diagnostic-grid dt { margin-bottom: 2px; color: var(--hk-light); font-size: 9.5px; }
 .diagnostic-grid dd {
   margin: 0;
   overflow-wrap: anywhere;
@@ -700,29 +756,40 @@ h2 {
 .diagnostic-grid dd[data-state="error"] { color: var(--hk-error-text); }
 ::selection { color: var(--hk-on-accent); background: var(--hk-accent-fill); }
 
-/* 窗口变窄时角色缩略图跟着缩，不再横向滚动、不再切掉半个。 */
+/* 窗口变窄时角色缩略图跟着缩，不横向滚动、不切掉半个。 */
 @media (max-width: 470px) {
   .role-options { gap: 3px; }
-  .role-thumb { width: 100%; height: auto; aspect-ratio: 570 / 640; max-height: 64px; }
-  .role-name { font-size: 9px; }
+  .role-thumb { width: 100%; height: auto; aspect-ratio: 570 / 640; max-height: 62px; }
+  .role-name { font-size: 10px; }
+  .session-button { min-height: 41px; padding: 3px 9px; }
 }
 
-/* 窗口偏矮时压缩舞台，优先把会话列表留在视野里。 */
+/* 矮窗口先压舞台和角色条，尽量把会话整行留在视野里。 */
+@media (max-height: 650px) {
+  .controller { gap: 5px; padding: 8px 12px; }
+  .stage { grid-template-columns: 148px minmax(0, 1fr); gap: 11px; padding: 6px 12px; }
+  .stage-image-frame { width: 148px; max-width: 100%; }
+  .stage-copy h1 { font-size: 17px; }
+  .roles-panel { padding: 5px 12px 6px; }
+  .role-thumb { height: 58px; }
+  .diagnostics summary { min-height: 26px; }
+}
+
 @media (max-height: 600px) {
-  .controller { gap: 6px; padding: 8px 10px; }
-  .stage { grid-template-columns: 92px minmax(0, 1fr); gap: 10px; padding: 7px 10px; }
-  .stage-image-frame { width: min(100%, 92px); }
-  .pose-caption { display: none; }
-  .stage-copy h1 { font-size: 14.5px; }
-  .stage-agent, .stage-updated { font-size: 10.5px; }
-  .roles-panel { padding: 5px 10px 6px; }
-  .role-thumb { max-height: 58px; width: auto; margin-inline: auto; }
+  .controller { gap: 5px; padding: 7px 10px; }
+  .stage { grid-template-columns: 120px minmax(0, 1fr); gap: 10px; padding: 6px 10px; }
+  .stage-image-frame { width: 120px; max-width: 100%; }
+  .stage-copy h1 { font-size: 16px; }
+  .stage-follow { font-size: 12px; }
+  .role-thumb { height: 52px; }
+  .role-name { font-size: 10.5px; }
+  .diagnostics summary { min-height: 24px; }
 }
 
 @media (max-width: 390px) {
   .controller { padding: 8px; }
   .connection-bar { gap: 7px; padding-inline: 8px; }
-  .connection-state, .follow-context { font-size: 10.5px; }
+  .connection-state, .connection-note { font-size: 10.5px; }
   .stage {
     grid-template-columns: minmax(0, 1fr);
     gap: 8px;
@@ -730,8 +797,9 @@ h2 {
     align-items: stretch;
   }
   .stage-art { justify-self: center; }
+  .stage-image-frame { width: 128px; }
   .stage-copy { padding: 2px 2px 4px; }
-  .stage-copy h1 { font-size: 15px; }
+  .stage-copy h1 { font-size: 16px; }
   .session-panel { padding-inline: 9px; }
   .roles-panel { padding-inline: 9px; }
 }

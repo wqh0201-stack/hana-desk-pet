@@ -79,6 +79,61 @@ test("the pick-up frames ship in both the native resources and the console previ
   assert.equal(generatedTotal, 18, "18 of them are locally generated");
 });
 
+/**
+ * Read only the canvas size from a WebP header. The asset set uses VP8X
+ * (extended) and VP8L (lossless); a lossy VP8 frame is rejected here so a new
+ * format cannot silently bypass the aspect check.
+ */
+function webpSize(file) {
+  const bytes = fs.readFileSync(file);
+  if (bytes.toString("latin1", 0, 4) !== "RIFF" || bytes.toString("latin1", 8, 12) !== "WEBP") return null;
+  const chunk = bytes.toString("latin1", 12, 16);
+  if (chunk === "VP8X") {
+    return { width: bytes.readUIntLE(24, 3) + 1, height: bytes.readUIntLE(27, 3) + 1 };
+  }
+  if (chunk === "VP8L") {
+    const bits = bytes.readUInt32LE(21);
+    return { width: (bits & 0x3fff) + 1, height: ((bits >>> 14) & 0x3fff) + 1 };
+  }
+  return null;
+}
+
+test("the console canvas covers the widest pose so the pet keeps one scale", () => {
+  const panelCss = fs.readFileSync(path.join(APP_UI, "assets/panel.css"), "utf8");
+  const frameRule = panelCss.match(/\.stage-image-frame\s*\{([^}]*)\}/)?.[1] ?? "";
+  const ratio = frameRule.match(/aspect-ratio:\s*([\d.]+)\s*\/\s*([\d.]+)/);
+  assert.ok(ratio, "the stage frame must declare an aspect ratio");
+  const cssAspect = Number(ratio[1]) / Number(ratio[2]);
+  const stageRule = panelCss.match(/\.stage\s*\{([^}]*)\}/)?.[1] ?? "";
+  const columns = stageRule.match(/grid-template-columns:\s*([\d.]+)px/);
+  const frameWidth = frameRule.match(/width:\s*([\d.]+)px/);
+  assert.ok(columns && frameWidth, "the stage column and frame width must be explicit");
+
+  let maxAspect = 0;
+  let widest = null;
+  let parsed = 0;
+  for (const role of Object.keys(POSE_INDEX.roles)) {
+    for (const pose of POSE_INDEX.roles[role]) {
+      const size = webpSize(path.join(POSE_ROOT, role, `${pose}.webp`));
+      assert.ok(size, `${role}/${pose} must be a readable VP8X or VP8L WebP`);
+      parsed += 1;
+      const aspect = size.width / size.height;
+      if (aspect > maxAspect) {
+        maxAspect = aspect;
+        widest = `${role}/${pose} ${size.width}x${size.height}`;
+      }
+    }
+  }
+  assert.ok(parsed >= 200, `expected the full pose set, parsed ${parsed}`);
+  assert.ok(cssAspect + 1e-9 >= maxAspect,
+    `stage aspect ${cssAspect.toFixed(4)} must cover the widest pose ${widest} (${maxAspect.toFixed(4)})`);
+  assert.ok(cssAspect <= maxAspect + 0.02,
+    `stage aspect ${cssAspect.toFixed(4)} is wider than needed (${maxAspect.toFixed(4)}); the pet would shrink`);
+  assert.ok(Number(frameWidth[1]) <= Number(columns[1]),
+    `stage column ${columns[1]}px must be at least the frame width ${frameWidth[1]}px`);
+  console.log(`STAGE_ASPECT_OK widest=${widest} aspect=${maxAspect.toFixed(4)} css=${cssAspect.toFixed(4)}`);
+});
+
 test("every catalog-resolvable character/pose pair is indexed, including variants and special poses", () => {
   const combinations = [];
   let parsedCandidates = 0;

@@ -68,6 +68,9 @@ node tests/lifecycle-fixture.mjs --out "$FIXTURE"
 echo "== Control panel render smoke =="
 node tests/panel-smoke.mjs
 
+echo "== Control panel layout probe (headless Chrome; skipped when Chrome is absent) =="
+node tools/panel-layout-probe.mjs
+
 echo "== Pose planner checks (B) =="
 swiftc -parse-as-library -module-cache-path "$MODULE_CACHE" -o "$CHECK_DIR/PosePlannerChecks" \
   "$CORE_DIR/PetState.swift" \

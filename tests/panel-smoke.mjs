@@ -43,12 +43,30 @@ function el(tag = "div") {
   const node = {
     tagName: tag, children: [], _text: "", value: "", checked: false, disabled: false,
     hidden: false, dataset: {}, style: { setProperty() {} }, className: "", attributes: {}, handlers: {},
+    parentNode: null,
+    classList: { add() {}, remove() {}, toggle() {} },
     get textContent() { return this._text; },
     set textContent(v) { this._text = String(v); },
-    append(...kids) { this.children.push(...kids); },
-    appendChild(k) { this.children.push(k); return k; },
+    get firstElementChild() { return this.children[0] ?? null; },
+    append(...kids) { for (const kid of kids) { this.children.push(kid); kid.parentNode = this; } },
+    appendChild(k) { this.children.push(k); k.parentNode = this; return k; },
+    insertBefore(child, reference) {
+      const index = reference ? this.children.indexOf(reference) : -1;
+      if (index >= 0) this.children.splice(index, 0, child);
+      else this.children.push(child);
+      child.parentNode = this;
+      return child;
+    },
+    remove() {
+      const parent = this.parentNode;
+      if (!parent) return;
+      const index = parent.children.indexOf(this);
+      if (index >= 0) parent.children.splice(index, 1);
+      this.parentNode = null;
+    },
     replaceChildren(...kids) {
       this.children = kids.flatMap((k) => (k && k.tagName === "fragment" ? k.children : [k]));
+      for (const kid of this.children) kid.parentNode = this;
     },
     addEventListener(type, callback) { this.handlers[type] = callback; },
     setAttribute(name, value) { this.attributes[name] = String(value); },
@@ -135,7 +153,8 @@ const followReleaseNotice = byId.get("follow-release-notice");
 const out = {
   roleButtons: roleBox?.children.length ?? 0,
   activityStatus: status?.textContent ?? null,
-  sessionTitle: byId.get("session-title")?.textContent ?? null,
+  roleTitle: byId.get("role-title")?.textContent ?? null,
+  followTarget: byId.get("follow-target")?.textContent ?? null,
   sessionRows: sessions?.children.length ?? 0,
   bridgeState: bridgeState?.textContent ?? null,
   stageImage: stageImage?.src ?? null,
@@ -150,7 +169,8 @@ console.log(JSON.stringify(out, null, 1));
 
 let ok = out.roleButtons === 7 && out.sessionRows === 2 && out.activityStatus === "工具执行" &&
   out.bridgeState === "已连接" && out.stageImage === "./assets/poses/gpt/idle.webp" &&
-  out.poseConnection === "桌宠未连接" && out.poseName === "idle" && out.poseFallback === true &&
+  out.roleTitle === "GPT 白龙" && out.followTarget === "跟随会话：给桌宠加绑定" &&
+  out.poseConnection === "等待姿态同步 · 静态预览" && out.poseName === "待机" && out.poseFallback === true &&
   out.followMode === "固定跟随" && out.diagnosticError.includes("APP_HOST_ERROR") &&
   !out.diagnosticError.includes("path") && out.eventCount === "当前快照不提供";
 
@@ -197,11 +217,18 @@ store["hana-pet.bridge.status"] = {
 storageChange?.(["hana-pet.bridge.status"]);
 await new Promise((r) => setTimeout(r, 30));
 if (byId.get("stage-image").src !== "./assets/poses/gpt/thinking.webp" ||
-    byId.get("pose-connection").textContent !== "桌宠姿态" ||
-    byId.get("pose-name").textContent !== "thinking" || byId.get("pose-fallback").hidden) ok = false;
+    byId.get("pose-connection").textContent !== "实时姿态" ||
+    byId.get("pose-name").textContent !== "思考" || byId.get("pose-fallback").hidden ||
+    byId.get("role-title").textContent !== "GPT 白龙" ||
+    byId.get("diag-pose-role").textContent !== "gpt" ||
+    byId.get("diag-pose-name").textContent !== "thinking" ||
+    byId.get("diag-pose-fallback").textContent !== "是" ||
+    byId.get("diag-pose-revision").textContent !== "4" ||
+    byId.get("diag-pose-since").textContent === "—") ok = false;
 
 let variantRevision = 5;
-for (const pose of ["reading-2", "happy-2", "sleeping-2", "thinking-2", "sorry"]) {
+for (const [pose, label] of [["reading-2", "阅读"], ["happy-2", "开心"], ["sleeping-2", "打盹"],
+  ["thinking-2", "思考"], ["sorry", "抱歉"]]) {
   store["hana-pet.bridge.status"] = {
     status: "connected", reason: null,
     poseState: { schemaVersion: 3, characterId: "claude", pose, fallback: false, since: 11, revision: variantRevision++ },
@@ -209,7 +236,7 @@ for (const pose of ["reading-2", "happy-2", "sleeping-2", "thinking-2", "sorry"]
   storageChange?.(["hana-pet.bridge.status"]);
   await new Promise((r) => setTimeout(r, 20));
   if (byId.get("stage-image").src !== `./assets/poses/claude/${pose}.webp` ||
-      byId.get("pose-name").textContent !== pose || byId.get("pose-connection").textContent !== "桌宠姿态" ||
+      byId.get("pose-name").textContent !== label || byId.get("pose-connection").textContent !== "实时姿态" ||
       byId.get("pose-fallback").hidden !== true) ok = false;
 }
 
@@ -224,22 +251,24 @@ for (const [pose, label] of [["picked-up", "被拎起"], ["picked-up-2", "被拎
   await new Promise((r) => setTimeout(r, 20));
   if (byId.get("stage-image").src !== `./assets/poses/gpt-onesie/${pose}.webp` ||
       byId.get("pose-name").textContent !== label ||
-      byId.get("pose-connection").textContent !== "桌宠姿态" ||
+      byId.get("pose-connection").textContent !== "实时姿态" ||
       byId.get("pose-fallback").hidden !== true) ok = false;
 }
 
 const reasonCases = [
-  ["unreachable", "桌宠没在运行，请打开它。"],
-  ["version_mismatch", "桌宠版本与控制台不配套，请换成配套版本。"],
-  ["invalid_response", "桌宠回应异常。"],
+  ["unreachable", "连接失败", "桌宠没在运行，请打开它。"],
+  ["version_mismatch", "版本不匹配", "桌宠版本与控制台不配套，请换成配套版本。"],
+  ["invalid_response", "回应异常", "桌宠回应异常。"],
 ];
-for (const [reason, message] of reasonCases) {
+for (const [reason, label, message] of reasonCases) {
   store["hana-pet.bridge.status"] = { status: "offline", reason, poseState: null };
   storageChange?.(["hana-pet.bridge.status"]);
   await new Promise((r) => setTimeout(r, 30));
-  if (byId.get("bridge-state").textContent !== message ||
+  if (byId.get("bridge-state").textContent !== label ||
+      byId.get("connection-note").textContent !== message ||
+      byId.get("connection-note").hidden !== false ||
       byId.get("stage-image").src !== "./assets/poses/deepseek/idle.webp" ||
-      byId.get("pose-connection").textContent !== "桌宠未连接" ||
+      byId.get("pose-connection").textContent !== "静态预览" ||
       byId.get("pose-fallback").hidden !== true) ok = false;
 }
 
@@ -248,6 +277,7 @@ store["hana-pet.bridge.status"] = "disabled";
 storageChange?.(["hana-pet.bridge.enabled", "hana-pet.bridge.status"]);
 await new Promise((r) => setTimeout(r, 30));
 if (byId.get("bridge-state").textContent !== "连接已关闭" ||
+    byId.get("connection-note").hidden !== true ||
     byId.get("bridge-toggle").checked !== false) ok = false;
 
 assert.equal(document.documentElement.dataset.appearance, "light",
@@ -281,7 +311,9 @@ const panelCss = fs.readFileSync("apps/hana-desktop-pet/ui/assets/panel.css", "u
 const stageRule = panelCss.match(/\.stage\s*\{([^}]*)\}/)?.[1] ?? "";
 const narrowStageRule = panelCss.match(/@media\s*\(max-width:\s*390px\)[\s\S]*?\.stage\s*\{([^}]*)\}/)?.[1] ?? "";
 assert.match(stageRule, /display:\s*grid;/, "stage uses a bounded grid");
-assert.match(stageRule, /grid-template-columns:\s*128px\s+minmax\(0,\s*1fr\);/);
+assert.match(stageRule, /grid-template-columns:\s*164px\s+minmax\(0,\s*1fr\);/);
+assert.match(panelCss, /\.stage-image-frame\s*\{[^}]*aspect-ratio:\s*730\s*\/\s*640;/,
+  "the stage canvas must cover the widest catalog pose (730x640)");
 assert.match(stageRule, /overflow:\s*hidden;/, "stage clips paint to its border");
 assert.match(narrowStageRule, /grid-template-columns:\s*minmax\(0,\s*1fr\);/, "narrow stage stacks vertically");
 assert.match(panelCss, /(?:^|\n)img\s*\{\s*max-width:\s*100%;\s*height:\s*auto;\s*\}/m, "all images have a responsive width cap");

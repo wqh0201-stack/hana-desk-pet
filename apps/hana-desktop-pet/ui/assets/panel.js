@@ -12,7 +12,7 @@ const SESSION_DIAGNOSTICS_KEY = "hana-pet.session-diagnostics";
 const LATEST_VALUE = "";
 const HOLD_MS = 2500;
 /** 与 .sessions 的 gap 保持一致，用于把列表高度对齐到整行。 */
-const SESSION_ROW_GAP = 4;
+const SESSION_ROW_GAP = 3;
 const FOLLOW_OPTION_MAX = 15;
 const POSE_SCHEMA_VERSION = 3;
 const BRIDGE_REASONS = new Set(["unreachable", "version_mismatch", "invalid_response"]);
@@ -27,8 +27,31 @@ const FOLLOW_RELEASE_LABELS = {
   pinned_missing: "会话已从列表中消失",
 };
 const HINT_LABELS = { confirming: "等待确认", compacting: "上下文压缩中", interrupted: "插话被丢弃" };
-/** Pick-up frames are only shown while the user drags the pet; label them in plain words. */
-const POSE_LABELS = { "picked-up": "被拎起", "picked-up-2": "被拎起·扑腾" };
+/**
+ * Presentation-only Chinese labels for catalogued poses. The raw pose id still
+ * drives the asset path and stays visible in the diagnostics panel; this map is
+ * never used to choose an image or to infer a native state.
+ */
+const POSE_DISPLAY_LABELS = {
+  idle: "待机", "idle-2": "待机", "idle-3": "待机", "idle-blink": "眨眼",
+  thinking: "思考", "thinking-2": "思考", deepthink: "沉思",
+  reading: "阅读", "reading-2": "阅读",
+  writing: "写字", searching: "查找", running: "奔跑",
+  delegating: "派活", drawing: "画画",
+  busy_left: "忙碌", busy_right: "忙碌",
+  happy: "开心", "happy-2": "开心",
+  sleeping: "打盹", "sleeping-2": "打盹",
+  asking: "询问", listening: "倾听",
+  compact: "整理思绪", surprised: "惊讶",
+  oops: "失误", sorry: "抱歉", proud: "得意",
+  tired: "疲惫", swamped_left: "忙翻了", swamped_right: "忙翻了",
+  "picked-up": "被拎起", "picked-up-2": "被拎起·扑腾",
+};
+/** A catalogued pose with no explicit label is still live, just not named. */
+const POSE_DISPLAY_FALLBACK = "实时姿态";
+const STATUS_LABELS = { working: "生成中", tool: "工具执行", error: "出错", idle: "空闲" };
+const CONNECTION_LABELS = { disabled: "连接已关闭", connecting: "正在连接", connected: "已连接" };
+const OFFLINE_LABELS = { unreachable: "连接失败", version_mismatch: "版本不匹配", invalid_response: "回应异常" };
 const LEGACY_DIAGNOSTIC_LABELS = {
   permission: "缺少 app/sessions.read 授权",
   timeout: "宿主会话调用超时",
@@ -51,17 +74,18 @@ const CONNECTION_STATUSES = new Set(["disabled", "connecting", "connected", "off
 const nodes = {
   bridgeToggle: document.getElementById("bridge-toggle"),
   bridgeState: document.getElementById("bridge-state"),
-  followContext: document.getElementById("follow-context"),
+  connectionNote: document.getElementById("connection-note"),
   panelNotice: document.getElementById("panel-notice"),
   followReleaseNotice: document.getElementById("follow-release-notice"),
   stageImage: document.getElementById("stage-image"),
   poseFallback: document.getElementById("pose-fallback"),
   poseConnection: document.getElementById("pose-connection"),
   poseName: document.getElementById("pose-name"),
-  title: document.getElementById("session-title"),
+  roleTitle: document.getElementById("role-title"),
+  followTarget: document.getElementById("follow-target"),
   agent: document.getElementById("agent"),
   status: document.getElementById("activity-status"),
-  updated: document.getElementById("updated"),
+  roleSync: document.getElementById("role-sync"),
   sessions: document.getElementById("sessions"),
   sessionsTitle: document.getElementById("sessions-title"),
   followSelect: document.getElementById("follow-select"),
@@ -74,8 +98,12 @@ const nodes = {
   diagEventCount: document.getElementById("diag-event-count"),
   diagSessionCount: document.getElementById("diag-session-count"),
   diagError: document.getElementById("diag-error"),
+  diagPoseRole: document.getElementById("diag-pose-role"),
+  diagPoseName: document.getElementById("diag-pose-name"),
+  diagPoseFallback: document.getElementById("diag-pose-fallback"),
+  diagPoseRevision: document.getElementById("diag-pose-revision"),
+  diagPoseSince: document.getElementById("diag-pose-since"),
 };
-const statusLabels = { working: "生成中", tool: "工具执行", success: "成功", error: "出错", idle: "空闲" };
 const diagnosticLabels = {
   permission: "缺少授权",
   timeout: "调用超时",
@@ -301,6 +329,18 @@ function visibleStatus(session, now = Date.now()) {
   return "idle";
 }
 
+/**
+ * One status vocabulary for the stage card, the session rows and the aria labels.
+ * A tool result is never evidence that the user's goal was reached, so only a
+ * session whose observed run actually ended may say “本轮结束”.
+ */
+function statusText(status, session) {
+  if (status === "success") {
+    return session?.runEnded === true && session?.running !== true ? "本轮结束" : "操作成功";
+  }
+  return STATUS_LABELS[status] ?? "空闲";
+}
+
 function relativeTime(value) {
   if (!Number.isFinite(value) || value <= 0) return "";
   const seconds = Math.max(0, Math.floor((Date.now() - value) / 1000));
@@ -311,6 +351,13 @@ function relativeTime(value) {
   const hours = Math.floor(minutes / 60);
   if (hours < 24) return `${hours} 小时前`;
   return `${Math.floor(hours / 24)} 天前`;
+}
+
+function clockTime(value) {
+  if (!Number.isFinite(value) || value <= 0) return "—";
+  const date = new Date(value);
+  const pad = (part) => String(part).padStart(2, "0");
+  return `${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
 }
 
 function setNotice(message) {
@@ -350,23 +397,48 @@ function getFollowedSession() {
   return findSession(getFollowedId()) ?? snapshot?.current ?? null;
 }
 
-function renderPetPose() {
-  const state = bridgeStatus === "connected" ? poseState : null;
-  const characterId = state?.characterId ?? selection.characterId;
-  const role = ROLES.find((item) => item.id === characterId) ?? ROLES[0];
-  const pose = state?.pose ?? "idle";
-  const poseLabel = POSE_LABELS[pose] ?? pose;
-  const imagePath = `./assets/poses/${role.id}/${pose}.webp`;
+function roleFor(characterId) {
+  return ROLES.find((item) => item.id === characterId) ?? ROLES[0];
+}
+
+/**
+ * The stage card is a single display model: the name, the artwork and the pose
+ * label always come from the same source. Only a validated live readback may be
+ * presented as live; otherwise the manual selection is an explicit static preview.
+ */
+function stageModel() {
+  const live = bridgeStatus === "connected" ? poseState : null;
+  const role = roleFor(live?.characterId ?? selection.characterId);
+  const poseLabel = live ? (POSE_DISPLAY_LABELS[live.pose] ?? POSE_DISPLAY_FALLBACK) : "待机";
+  const connection = live
+    ? "实时姿态"
+    : bridgeEnabled && bridgeStatus === "connected"
+      ? "等待姿态同步 · 静态预览"
+      : "静态预览";
+  return { live, role, poseLabel, connection, fallback: live?.fallback === true };
+}
+
+function renderStage(model) {
+  const pose = model.live?.pose ?? "idle";
+  const imagePath = `./assets/poses/${model.role.id}/${pose}.webp`;
   if (renderedPosePath !== imagePath) {
     nodes.stageImage.src = imagePath;
     renderedPosePath = imagePath;
   }
-  nodes.stageImage.alt = state
-    ? `${role.name} ${poseLabel} 桌宠姿态${state.fallback ? "，替代姿态" : ""}`
-    : `${role.name} idle 立绘，桌宠未连接`;
-  nodes.poseConnection.textContent = state ? "桌宠姿态" : "桌宠未连接";
-  nodes.poseName.textContent = poseLabel;
-  nodes.poseFallback.hidden = state?.fallback !== true;
+  nodes.stageImage.alt = model.live
+    ? `${model.role.name} ${model.poseLabel} 桌宠姿态${model.fallback ? "，替代姿态" : ""}`
+    : `${model.role.name} 待机立绘，静态预览`;
+  nodes.roleTitle.textContent = model.role.name;
+  nodes.roleTitle.title = model.role.name;
+  nodes.poseName.textContent = model.poseLabel;
+  nodes.poseConnection.textContent = model.connection;
+  nodes.poseFallback.hidden = !model.fallback;
+
+  // The strip always shows the user's target; the stage shows the real readback.
+  const selected = roleFor(selection.characterId);
+  const waiting = Boolean(model.live) && model.role.id !== selection.characterId;
+  nodes.roleSync.hidden = !waiting;
+  nodes.roleSync.textContent = waiting ? `已选 ${selected.name}，等待桌宠同步` : "";
 }
 
 function renderFollowReleaseNotice() {
@@ -395,7 +467,6 @@ function renderRoleOptions() {
       button.type = "button";
       button.className = "role-option";
       button.dataset.roleId = role.id;
-      button.title = `${role.name} · 点击切换`;
       const image = document.createElement("img");
       image.className = "role-thumb";
       image.src = `./assets/roles/${role.id}.webp`;
@@ -407,11 +478,14 @@ function renderRoleOptions() {
       button.append(image, label);
       button.addEventListener("click", () => void chooseRole(role.id));
       nodes.roles.append(button);
-      roleButtons.push({ id: role.id, button });
+      roleButtons.push({ id: role.id, name: role.name, button });
     }
   }
   for (const item of roleButtons) {
-    item.button.setAttribute("aria-pressed", String(selection.characterId === item.id));
+    const selected = selection.characterId === item.id;
+    item.button.setAttribute("aria-pressed", String(selected));
+    item.button.setAttribute("aria-label", `${item.name}${selected ? "，已选择" : "，选择此角色"}`);
+    item.button.title = `${item.name}${selected ? " · 当前选择" : " · 选择此角色"}`;
   }
 }
 
@@ -435,52 +509,64 @@ async function chooseRole(characterId) {
   }
 }
 
-function buildSessionRow(item, currentId, followedId) {
-  const row = document.createElement("li");
-  row.className = "session";
+const sessionRowCache = new Map();
+let emptyRow = null;
+
+/**
+ * Rows are created once per session id and updated in place. Rebuilding the whole
+ * list every second used to drop keyboard focus and reset the scroll position.
+ */
+function createSessionRow() {
+  const li = document.createElement("li");
+  li.className = "session";
   const button = document.createElement("button");
   button.type = "button";
   button.className = "session-button";
-  const isCurrent = item.sessionId === currentId;
-  const isFollowed = item.sessionId === followedId;
-  button.setAttribute("aria-pressed", String(follow.mode === "pinned" && item.sessionId === follow.pinnedSessionId));
-  const status = visibleStatus(item);
-  const title = document.createElement("span");
-  title.className = "session-title";
-  title.textContent = safeText(item.displayTitle ?? item.title, `会话 · ${shortId(item.sessionId)}`);
-  const detail = document.createElement("span");
-  detail.className = "session-detail";
-  const agentName = safeText(item.agentName, item.agentId ? `Agent ${item.agentId}` : "Agent 未知");
-  const ago = item.lastActivityAt > 0 ? relativeTime(item.lastActivityAt) : "暂无活动";
-  detail.textContent = `${agentName} · ${ago}`;
   const copy = document.createElement("span");
   copy.className = "session-copy";
+  const title = document.createElement("span");
+  title.className = "session-title";
+  const detail = document.createElement("span");
+  detail.className = "session-detail";
   copy.append(title, detail);
-  const markers = document.createElement("span");
-  markers.className = "session-markers";
-  if (isCurrent) {
-    const currentMarker = document.createElement("span");
-    currentMarker.className = "session-marker current";
-    currentMarker.textContent = "当前";
-    markers.append(currentMarker);
-  }
-  if (isFollowed) {
-    const followMarker = document.createElement("span");
-    followMarker.className = "session-marker followed";
-    followMarker.textContent = "跟随中";
-    markers.append(followMarker);
-  }
-  const statusPill = document.createElement("span");
-  statusPill.className = `status-pill ${status}`;
-  statusPill.textContent = statusLabels[status] ?? "空闲";
-  button.append(copy, statusPill, markers);
-  button.setAttribute("aria-label", `${title.textContent}，${agentName}，${statusLabels[status]}，${isFollowed ? "跟随中" : "点击固定跟随"}`);
-  button.addEventListener("click", () => void setFollowTarget(item.sessionId));
-  row.append(button);
-  return row;
+  const pill = document.createElement("span");
+  pill.className = "status-pill idle";
+  const marker = document.createElement("span");
+  marker.className = "session-marker followed";
+  marker.hidden = true;
+  button.append(copy, pill, marker);
+  button.addEventListener("click", () => {
+    const sessionId = button.dataset.sessionId;
+    if (sessionId) void setFollowTarget(sessionId);
+  });
+  li.append(button);
+  return { li, button, title, detail, pill, marker };
 }
 
-function renderSessions(currentId, followedId) {
+function updateSessionRow(row, item, followedId) {
+  const title = listRowTitle(item);
+  const agentName = safeText(item.agentName, item.agentId ? `Agent ${item.agentId}` : "Agent 未知");
+  const ago = item.lastActivityAt > 0 ? relativeTime(item.lastActivityAt) : "暂无活动";
+  const status = visibleStatus(item);
+  const label = statusText(status, item);
+  const isFollowed = item.sessionId === followedId;
+  const isPinned = follow.mode === "pinned" && item.sessionId === follow.pinnedSessionId;
+
+  row.button.dataset.sessionId = item.sessionId;
+  row.button.dataset.followed = isFollowed ? "true" : "false";
+  row.button.setAttribute("aria-pressed", String(isPinned));
+  row.title.textContent = title;
+  row.title.title = title;
+  row.detail.textContent = `${agentName} · ${ago}`;
+  row.pill.textContent = label;
+  row.pill.className = `status-pill ${status}`;
+  row.marker.hidden = !isFollowed;
+  row.marker.textContent = isPinned ? "已固定" : "跟随中";
+  row.button.setAttribute("aria-label",
+    `${title}，${agentName}，${label}${isFollowed ? "，正在跟随" : "，点击固定跟随"}`);
+}
+
+function computeSessionRows() {
   const activityById = new Map((Array.isArray(snapshot?.sessions) ? snapshot.sessions : [])
     .map((item) => [item.sessionId, item]));
   const listed = Array.isArray(sessionList.sessions) ? sessionList.sessions : [];
@@ -508,23 +594,57 @@ function renderSessions(currentId, followedId) {
       rowsById.set(item.sessionId, item);
     }
   }
-  const rows = [...rowsById.values()].sort((a, b) => (b.lastActivityAt ?? 0) - (a.lastActivityAt ?? 0) ||
+  return [...rowsById.values()].sort((a, b) => (b.lastActivityAt ?? 0) - (a.lastActivityAt ?? 0) ||
     listRowTitle(a).localeCompare(listRowTitle(b)));
+}
 
+function ensureEmptyRow() {
+  if (!emptyRow) {
+    emptyRow = document.createElement("li");
+    emptyRow.className = "empty";
+  }
+  return emptyRow;
+}
+
+function renderSessions(followedId) {
+  const rows = computeSessionRows();
   if (!rows.length) {
-    nodes.sessionsTitle.textContent = "会话";
-    const empty = document.createElement("li");
-    empty.className = "empty";
+    for (const row of sessionRowCache.values()) row.li.remove();
+    sessionRowCache.clear();
+    const empty = ensureEmptyRow();
     empty.textContent = diagnostics?.list
       ? "会话清单暂不可用"
       : sessionList.available ? "暂无可跟随的会话" : "等待公开会话事件";
     nodes.sessions.replaceChildren(empty);
+    nodes.sessionsTitle.textContent = "会话";
     return;
   }
-  const list = document.createDocumentFragment();
-  for (const item of rows) list.append(buildSessionRow(item, currentId, followedId));
+  if (emptyRow) {
+    emptyRow = null;
+    nodes.sessions.replaceChildren();
+  } else {
+    // The static placeholder from panel.html is not in the row cache; drop it
+    // before the first real rows are inserted, or it would linger at the end.
+    const stale = [...nodes.sessions.children].filter((child) => child.className === "empty");
+    for (const child of stale) child.remove();
+  }
+  const seen = new Set(rows.map((item) => item.sessionId));
+  for (const [sessionId, row] of sessionRowCache) {
+    if (seen.has(sessionId)) continue;
+    row.li.remove();
+    sessionRowCache.delete(sessionId);
+  }
+  rows.forEach((item, index) => {
+    let row = sessionRowCache.get(item.sessionId);
+    if (!row) {
+      row = createSessionRow();
+      sessionRowCache.set(item.sessionId, row);
+    }
+    updateSessionRow(row, item, followedId);
+    const current = nodes.sessions.children[index] ?? null;
+    if (current !== row.li) nodes.sessions.insertBefore(row.li, current);
+  });
   nodes.sessionsTitle.textContent = `会话 · ${rows.length}`;
-  nodes.sessions.replaceChildren(list);
 }
 
 function listRowTitle(item) {
@@ -540,6 +660,14 @@ function renderDiagnostics() {
   nodes.diagRevision.textContent = Number.isSafeInteger(snapshot?.revision) ? String(snapshot.revision) : "—";
   nodes.diagEventCount.textContent = "当前快照不提供";
   nodes.diagSessionCount.textContent = String(Array.isArray(snapshot?.sessions) ? snapshot.sessions.length : 0);
+
+  // Technical fields only; a manual idle preview is never dressed up as a readback.
+  const live = bridgeStatus === "connected" ? poseState : null;
+  nodes.diagPoseRole.textContent = live ? live.characterId : "—";
+  nodes.diagPoseName.textContent = live ? live.pose : "—";
+  nodes.diagPoseFallback.textContent = live ? (live.fallback ? "是" : "否") : "—";
+  nodes.diagPoseRevision.textContent = live ? String(live.revision) : "—";
+  nodes.diagPoseSince.textContent = live ? clockTime(live.since) : "—";
 
   let recentError = null;
   if (bridgeEnabled && bridgeStatus === "offline") {
@@ -557,21 +685,20 @@ function renderDiagnostics() {
 }
 
 /**
- * 会话列表占据面板剩余高度，但高度只取整行：被窗口切掉的半行看起来像渲染坏了。
- * 行数不够填满时（高窗口）面板改成内容高，避免卡片底部留一大块空白。
+ * Space the list can use inside its own panel. Measuring the panel minus the
+ * current list height would treat the first (short) list as permanent chrome and
+ * lock the panel to too few rows — which is exactly what happened on first paint.
  */
 function availableListHeight() {
   const panel = nodes.sessions.parentElement;
-  const controller = panel.parentElement;
-  const style = getComputedStyle(controller);
-  const gap = parseFloat(style.rowGap) || 0;
+  const style = getComputedStyle(panel);
   const padding = (parseFloat(style.paddingTop) || 0) + (parseFloat(style.paddingBottom) || 0);
-  const children = [...controller.children].filter((el) => el.getClientRects().length > 0);
-  const others = children
-    .filter((el) => el !== panel)
-    .reduce((sum, el) => sum + el.getBoundingClientRect().height, 0);
-  const chrome = panel.offsetHeight - nodes.sessions.offsetHeight;
-  return controller.clientHeight - padding - gap * Math.max(0, children.length - 1) - others - chrome;
+  const heading = panel.querySelector(".section-heading");
+  const headingHeight = heading && typeof heading.getBoundingClientRect === "function"
+    ? heading.getBoundingClientRect().height
+    : 0;
+  const headingMargin = heading ? (parseFloat(getComputedStyle(heading).marginBottom) || 0) : 0;
+  return panel.clientHeight - padding - headingHeight - headingMargin;
 }
 
 function syncSessionListHeight() {
@@ -608,46 +735,42 @@ function syncSessionListHeight() {
   list.style.maxHeight = `${Math.round(fit * rowHeight - SESSION_ROW_GAP)}px`;
 }
 
-function render() {
+function renderConnection() {
+  const visible = bridgeEnabled ? bridgeStatus : "disabled";
+  let label = CONNECTION_LABELS[visible] ?? "连接状态未知";
+  let note = "";
+  if (visible === "offline") {
+    label = OFFLINE_LABELS[bridgeReason] ?? "连接失败";
+    note = BRIDGE_REASON_LABELS[bridgeReason] ?? "暂时无法连接桌宠，请确认它已打开。";
+  }
+  nodes.bridgeState.textContent = label;
+  nodes.bridgeState.dataset.status = CONNECTION_STATUSES.has(visible) ? visible : "error";
+  nodes.connectionNote.textContent = note;
+  nodes.connectionNote.hidden = !note;
   nodes.bridgeToggle.checked = bridgeEnabled;
-  const statusLabelsConnection = {
-    disabled: "连接已关闭",
-    connecting: "正在连接",
-    connected: "已连接",
-    offline: "已启用 · 连接失败",
-  };
-  const visibleConnectionStatus = bridgeEnabled ? bridgeStatus : "disabled";
-  nodes.bridgeState.textContent = visibleConnectionStatus === "offline"
-    ? BRIDGE_REASON_LABELS[bridgeReason] ?? statusLabelsConnection.offline
-    : statusLabelsConnection[visibleConnectionStatus] ?? "连接状态未知";
-  nodes.bridgeState.dataset.status = CONNECTION_STATUSES.has(visibleConnectionStatus) ? visibleConnectionStatus : "error";
+}
 
-  const followed = getFollowedSession();
+function render() {
+  renderConnection();
   const followedId = getFollowedId();
-  const followedTitle = followed ? listRowTitle(followed) : null;
-  const current = followed ?? null;
+  const current = getFollowedSession() ?? null;
   const status = visibleStatus(current);
-  nodes.followContext.textContent = followedTitle
-    ? `${follow.mode === "pinned" ? "固定跟" : "正在跟"}「${followedTitle}」 · ${statusLabels[status] ?? "空闲"}`
-    : `等待会话 · ${statusLabels[status] ?? "空闲"}`;
+  renderStage(stageModel());
 
-  nodes.title.textContent = safeText(current?.displayTitle ?? current?.title, "暂无活动会话");
+  nodes.followTarget.textContent = current ? `跟随会话：${listRowTitle(current)}` : "等待会话活动";
+  nodes.followTarget.title = current ? listRowTitle(current) : "";
   const agent = safeText(current?.agentName, current?.agentId ? `Agent ${current.agentId}` : "Agent 未知");
   const age = current?.lastActivityAt > 0 ? relativeTime(current.lastActivityAt) : "暂无活动";
   nodes.agent.textContent = `${agent} · ${age}`;
-  nodes.status.textContent = statusLabels[status] ?? "空闲";
+  nodes.status.textContent = statusText(status, current);
   nodes.status.className = `status-pill ${status}`;
-  nodes.updated.textContent = current?.lastActivityAt > 0
-    ? `最近活动 ${relativeTime(current.lastActivityAt)}`
-    : "尚未收到公开会话事件";
 
   nodes.followMode.textContent = follow.mode === "pinned" ? "固定跟随" : "自动跟随";
   nodes.followMode.dataset.mode = follow.mode;
   nodes.followAuto.hidden = follow.mode !== "pinned";
   renderRoleOptions();
-  renderPetPose();
   renderFollowReleaseNotice();
-  renderSessions(snapshot?.current?.sessionId ?? null, followedId);
+  renderSessions(followedId);
   syncSessionListHeight();
   renderDiagnostics();
   renderLegacyFollowOptions();
@@ -701,9 +824,11 @@ async function refresh() {
     poseState = bridgeEnabled && bridgeStatus === "connected" ? normalizePoseState(statusRecord?.poseState) : null;
     render();
   } catch {
-    nodes.bridgeState.textContent = "控制台状态暂不可读";
+    nodes.bridgeState.textContent = "状态暂不可读";
     nodes.bridgeState.dataset.status = "error";
-    setNotice("控制台状态暂不可读，请稍后重试。");
+    nodes.connectionNote.textContent = "控制台状态暂不可读，请稍后重试。";
+    nodes.connectionNote.hidden = false;
+    setNotice("");
   }
 }
 

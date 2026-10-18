@@ -7,11 +7,16 @@ PACKAGE_DIR="$PROJECT_ROOT/pet-macos"
 INFO_PLIST="$PACKAGE_DIR/Resources/Info.plist"
 DIST_DIR="$PROJECT_ROOT/dist"
 APP_NAME="HanaDesktopPet"
-APP_BUNDLE_NAME="$APP_NAME-crosspet-v0.5.7-local"
+APP_BUNDLE_NAME="$APP_NAME-crosspet-v0.5.8-local"
 APP_BUNDLE="$DIST_DIR/$APP_BUNDLE_NAME.app"
+ICON_FILE="$PACKAGE_DIR/Resources/AppIcon.icns"
 
 if [ ! -f "$INFO_PLIST" ]; then
   echo "Missing bundle metadata: $INFO_PLIST" >&2
+  exit 1
+fi
+if [ ! -f "$ICON_FILE" ]; then
+  echo "Missing bundle icon: $ICON_FILE" >&2
   exit 1
 fi
 if [ -e "$APP_BUNDLE" ]; then
@@ -65,6 +70,7 @@ trap 'exit 1' HUP INT TERM
 /bin/mkdir -p "$TEMP_BUNDLE/Contents/MacOS" "$TEMP_BUNDLE/Contents/Resources"
 /bin/cp "$EXECUTABLE" "$TEMP_BUNDLE/Contents/MacOS/$APP_NAME"
 /bin/cp "$INFO_PLIST" "$TEMP_BUNDLE/Contents/Info.plist"
+/bin/cp "$ICON_FILE" "$TEMP_BUNDLE/Contents/Resources/AppIcon.icns"
 /bin/cp -R "$RESOURCE_DIR" "$TEMP_BUNDLE/Contents/Resources/CrossPet"
 BUNDLED_ASSETS="$TEMP_BUNDLE/Contents/Resources/CrossPet"
 node - "$BUNDLED_ASSETS" "$PROJECT_ROOT/assets/crosspet" <<'NODE'
@@ -114,5 +120,6 @@ trap - EXIT HUP INT TERM
 
 printf 'Created locally ad-hoc-signed app bundle: %s\n' "$APP_BUNDLE"
 printf 'Bundle identifier: %s\n' "com.hanaagent.prototype.hana-desktop-pet"
+printf 'Bundle icon: %s\n' "AppIcon.icns"
 printf 'Bundled character poses: %s\n' "$POSE_COUNT"
 printf 'Signing: ad-hoc only; no Developer ID certificate or notarization.\n'

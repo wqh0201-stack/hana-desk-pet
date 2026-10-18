@@ -11,8 +11,9 @@
   <main class="controller">
     <section class="connection-bar" aria-label="桌宠连接状态">
       <span id="bridge-state" class="connection-state" data-status="disabled" aria-live="polite">连接已关闭</span>
-      <span id="follow-context" class="follow-context">等待会话 · 空闲</span>
+      <span id="connection-note" class="connection-note" hidden></span>
       <label class="toggle" title="启用或关闭本机桌宠连接">
+        <span class="toggle-label" aria-hidden="true">本机连接</span>
         <input id="bridge-toggle" type="checkbox" aria-label="启用桌宠连接">
         <span class="toggle-track" aria-hidden="true"></span>
       </label>
@@ -21,24 +22,26 @@
     <p id="panel-notice" class="panel-notice" role="status" aria-live="polite"></p>
     <p id="follow-release-notice" class="follow-release-notice" role="status" aria-live="polite" hidden></p>
 
-    <section class="stage" aria-label="当前会话与桌宠姿态">
+    <section class="stage" aria-label="当前角色与桌宠姿态">
       <div class="stage-art">
         <div class="stage-image-frame">
-          <img id="stage-image" src="./assets/poses/claude/idle.webp" width="150" height="168" alt="Claude idle 立绘，桌宠未连接">
-          <span id="pose-fallback" class="pose-fallback" hidden>替代</span>
+          <img id="stage-image" src="./assets/poses/claude/idle.webp" width="150" height="168" alt="Claude 待机立绘，静态预览">
+          <span id="pose-fallback" class="pose-fallback" hidden>替代姿态</span>
         </div>
       </div>
       <div class="stage-copy">
         <div class="stage-head">
-          <h1 id="session-title">暂无活动会话</h1>
+          <h1 id="role-title">Claude</h1>
           <span id="activity-status" class="status-pill idle" aria-live="polite">空闲</span>
         </div>
-        <p id="agent" class="stage-agent">Agent 未知 · —</p>
-        <p id="updated" class="stage-updated">尚未收到公开会话事件</p>
+        <p id="follow-target" class="stage-follow">等待会话活动</p>
+        <p id="agent" class="stage-agent">Agent 未知 · 暂无活动</p>
         <p class="pose-caption">
-          <span id="pose-connection">桌宠未连接</span>
-          <span id="pose-name">idle</span>
+          <span class="pose-label">姿态：</span>
+          <span id="pose-name" class="pose-name">待机</span>
+          <span id="pose-connection" class="pose-connection">静态预览</span>
         </p>
+        <p id="role-sync" class="role-sync" hidden></p>
       </div>
     </section>
 
@@ -58,7 +61,7 @@
     <section class="roles-panel" aria-labelledby="roles-title">
       <div class="section-heading compact-heading">
         <h2 id="roles-title">换角色</h2>
-        <span>点击立即切换</span>
+        <span>选择桌宠形象</span>
       </div>
       <div id="role-options" class="role-options" role="group" aria-label="选择桌宠角色"></div>
     </section>
@@ -70,6 +73,11 @@
         <div><dt>快照 revision</dt><dd id="diag-revision">—</dd></div>
         <div><dt>事件计数</dt><dd id="diag-event-count">当前快照不提供</dd></div>
         <div><dt>会话记录</dt><dd id="diag-session-count">0</dd></div>
+        <div><dt>回读角色</dt><dd id="diag-pose-role">—</dd></div>
+        <div><dt>原始姿态</dt><dd id="diag-pose-name">—</dd></div>
+        <div><dt>替代姿态</dt><dd id="diag-pose-fallback">—</dd></div>
+        <div><dt>姿态 revision</dt><dd id="diag-pose-revision">—</dd></div>
+        <div><dt>姿态 since</dt><dd id="diag-pose-since">—</dd></div>
         <div class="diagnostic-error"><dt>最近错误</dt><dd id="diag-error">无</dd></div>
       </dl>
     </details>
