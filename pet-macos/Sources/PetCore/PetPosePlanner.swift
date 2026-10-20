@@ -10,7 +10,10 @@ public enum PetPosePlanner {
         toolName: String?,
         hint: PetActivityHint? = nil
     ) -> String {
-        // Error is the existing short feedback and outranks a concurrent host hint.
+        // Waiting for the user is the most urgent state: a confirmation outranks even
+        // a real error, because the run cannot continue until the user acts.
+        if hint == .confirming { return "asking" }
+        // A real error is the existing short feedback and outranks the other hints.
         if status == .error { return "oops" }
         if let hint {
             switch hint {
@@ -33,6 +36,17 @@ public enum PetPosePlanner {
         }
     }
 
+    /// Whether this tool maps to a concrete semantic pose. Ambient moods (dense-tool
+    /// swamped, fatigue) must never cover these actions.
+    public static func isSemanticToolName(_ toolName: String?) -> Bool {
+        guard let pose = preferredToolPose(for: toolName) else { return false }
+        return semanticPoses.contains(pose)
+    }
+
+    private static let semanticPoses: Set<String> = [
+        "reading", "writing", "searching", "running", "delegating", "drawing",
+    ]
+
     /// Resolves the ordinary-work rhythm poses for one character, using only catalog-listed
     /// artwork. `busy_left`/`busy_right` are generic work poses, and the third stage uses the
     /// character's own thinking variant (never another character's artwork). Semantic poses
@@ -51,6 +65,35 @@ public enum PetPosePlanner {
             busyRight: available.contains("busy_right") ? "busy_right" : thinking
         )
         return set.supportsRhythm ? set : nil
+    }
+
+    /// The ordinary-work rhythm while at least two unbound conversations are working.
+    /// It swaps the thinking stages for the existing swamped artwork, so only ordinary
+    /// thinking changes; tool actions, hints, errors and drawing holds are untouched.
+    public static func swampedWorkPoseSet(
+        characterID: String,
+        availablePoseNames: [String]
+    ) -> PetWorkPoseSet? {
+        guard let normal = workPoseSet(characterID: characterID, availablePoseNames: availablePoseNames) else {
+            return nil
+        }
+        let left = PetPoseMood.resolvedPose(
+            for: .swampedLeft,
+            workPose: normal.thinking,
+            availablePoseNames: availablePoseNames
+        )
+        let right = PetPoseMood.resolvedPose(
+            for: .swampedRight,
+            workPose: normal.thinking,
+            availablePoseNames: availablePoseNames
+        )
+        let set = PetWorkPoseSet(
+            thinking: left,
+            busyLeft: left,
+            thinkingVariant: right,
+            busyRight: right
+        )
+        return set.supportsRhythm ? set : normal
     }
 
     /// The one thinking-variant a character may use in its own work rhythm.

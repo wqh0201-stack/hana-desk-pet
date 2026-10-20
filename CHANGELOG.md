@@ -1,8 +1,31 @@
 # 变更记录
 
-各端分开版本：**控制台**（Hana v2 App，`apps/hana-desktop-pet`）、**macOS 桌宠**（Swift + AppKit，`pet-macos`）和 **Windows 桌宠**（WPF，`pet-windows`）。macOS 桌宠当前 `0.5.8`；控制台 `0.6.6` 已发布（Latest）；Windows `0.2.0` 已发布。
+各端分开版本：**控制台**（Hana v2 App，`apps/hana-desktop-pet`）、**macOS 桌宠**（Swift + AppKit，`pet-macos`）和 **Windows 桌宠**（WPF，`pet-windows`）。公开基线是控制台 `0.6.6` / 协议 v3 / macOS `0.5.8` / Windows `0.2.0`；本轮配套版本是控制台 `0.6.7` / 协议 v4 / macOS `0.5.9` / Windows `0.3.0`；各端只需下载所用平台的桌宠，市场收录进度以市场条目为准。
 
 逐轮的详细记录（任务边界、验证数据、未验证项）在 [`docs/迭代记录.md`](docs/迭代记录.md)。
+
+## 控制台 0.6.7 / macOS 0.5.9 / Windows 0.3.0 — 2026-10-20
+
+- **修掉串版下载**：0.6.7 候选是协议 v4，下载入口却还指向 v3 的 Windows 0.2.0 / macOS 0.5.8，用户点下载会拿到与 v4 控制台不兼容的桌宠。`PET_DOWNLOADS` 与 `panel.html` 备用链接统一改为 Windows `windows-0.3.0` / macOS `pet-0.5.9`；安装说明的来源提示同步改为 `windows-0.3.0`。两处地址仍是固定白名单，仍只经 `hana.external.open` 打开，未新增网络抓取、自动下载或安装能力。
+- **保留公开基线**：0.6.6 / 协议 v3 的包与旧地址（Windows 0.2.0、`console-0.6.5` 里的 macOS 0.5.8）原样保留，不重写已发布包、不覆盖旧附件。当前市场收录的 0.6.6 经统筹核对与公开 asset 一致，没有已确认的版本错配。
+- **Windows 0.3.0/v4 源码回灌**：只回灌回传的 10 项实际差异，保留本仓库既有 Mac/控制台 v4 改动。修掉编译失败与测试失配；气泡改为按 Windows 向下坐标、从立绘实际顶边向上挂（原实现挂在脚下），扣除透明留白；DPI 统一换算；长字幕走两行档；圆角按 `height/2 - 3` 封顶；光晕/尾巴各自按窗口坐标裁剪；`version.json` 成为 0.3.0/4 的单一来源并由构建脚本校验 `PetAPI.cs`；`--check-assets` 增加台词表解析（7 角色 × 20 状态 × 2 = 280 条）。
+- 兼容判定写进 `tests/desktop-compat.test.mjs`：0.6.6 → 0.2.0/0.5.8（协议 3），0.6.7 → 0.3.0/0.5.9（协议 4）；并守卫已发布 0.6.6 包与 Windows 0.2.0 附件不被改写成 v4、当前候选不出现旧 v3 地址。将来控制台小版本可共用同一桌宠，按协议与所需字段/功能判断，不要求版本号相等。
+- 验证：`sh tools/run-checks.sh` exit 0（Node 184 项、拖拽 D 段 233 项恢复真实编译、E/F/G 与 PetCore 全过）；`build-windows-portable.py --check-assets-only` 211 张；`run-windows-checks.py` 在 macOS 按缺失 `csc.exe` exit 2；官方 validator `--dir` 与 `--archive dist/app-hana-desktop-pet-0.6.7.zip` 均 0 error / 1 已知 warning。`dist/HanaDesktopPet-windows-0.3.0-portable.zip` 原样复制自回传成品，SHA-256 不变。
+- macOS 0.5.9 在 `.build/release-20261020/` 独立暂存重建（不改动 `dist/` 里正在运行的旧 `.app`），`ditto` 归档为 `dist/HanaDesktopPet-crosspet-v0.5.9-local.zip`：版本 0.5.9、211 张 WebP、`pet-lines.json`、许可/署名、图标齐全，arm64，ad-hoc 签名 `codesign --verify --deep --strict` 通过。
+- **Windows 与真实 Hana 的联动**：用户已于 2026-10-20 实测验收通过；统筹本轮未在 Mac 独立复跑（本机无 Hana v4 宿主）。Windows 端编译、合成检查与单屏 100% DPI 的 WPF/拖动/穿透证据来自回传报告。
+- **验证边界**：Windows 与真实 Hana 的联动由用户实测通过；Mac 气泡版已有用户本地试用反馈。多屏/混合 DPI/负坐标、真实屏幕边缘夹紧、减少动态效果细节、Intel/旧 macOS 与新旧版本混装未完成专项验证。
+- 发布顺序：先让 `windows-0.3.0` 与 `pet-0.5.9` 附件可用并核对，再发控制台 0.6.7，最后更新市场；旧公开 v3 附件与 Release 保留给旧控制台用户。
+
+## 状态字幕气泡实现记录（2026-10-18，随上述版本发布）
+
+以下保留 10 月 18 日的阶段性记录；Windows 最终编译、实机与用户联动验收以本轮 10 月 20 日记录为准。
+
+- 桌宠气泡从「只在确认/完成时弹两行通知」扩展成**按状态出单行台词**：每个姿态对应一句字幕，让你知道她在干嘛。姿态→状态归一化表覆盖全部 47 个姿态名；词条 7 角色 × 20 状态 × 2 条，全部自写，不含上游 CrossPet 任何台词。
+- 展示优先级：拎起 > 确认通知 > 完成通知 > 状态台词。通知的两行格式完全保持原样。单行台词最短停留 2.5 秒，期间来的新状态排队合并；带时长的状态到点收起且姿态不变就不回弹，`null` 状态常挂。
+- 气泡外观定稿为「细描边 + 彩色光晕」：大圆角矩形（r18）、1pt 主题色描边、纯白不透明填充、独立小椭圆尾巴（22×15，1pt 描边）。描边外侧三层主题色光晕 + 一层中性落影，**只往上、左、右扩散，下方一个像素都不洇**（角色就在正下方）。窗口高度含光晕边距与尾巴：单行 64、折行 82、两行通知 78。
+- 气泡贴近头顶：`gapAbovePet` 由 4 改为 0，尾巴尖正好贴住角色窗口顶边，不重叠不留缝。
+- 协议 v4、DTO、manifest、权限、素材目录一律未动；台词表是原生层资源，靠姿态驱动，不读任何会话内容。
+- 验证：`sh tools/run-checks.sh` exit 0。**Windows C# 本轮只改代码未编译**（本机无 `csc.exe`）；真实桌面视觉未实测，气泡外观用离屏渲染真实视图类验证。
 
 ## 控制台 0.6.6 — 2026-10-18
 

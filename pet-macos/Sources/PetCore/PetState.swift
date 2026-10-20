@@ -15,6 +15,45 @@ public enum PetActivityHint: String, Codable, CaseIterable, Sendable {
     case interrupted
 }
 
+/// Which session the pet is following. Only `latest` may apply cross-session concurrency.
+public enum PetFollowMode: String, Codable, CaseIterable, Sendable {
+    case latest
+    case pinned
+}
+
+/// One bounded presentation event. The id is opaque and is the only dedupe key.
+public enum PetNoticeKind: String, Codable, CaseIterable, Sendable {
+    case confirmation
+    case completion
+}
+
+public struct PetNotice: Codable, Equatable, Sendable {
+    public var id: String
+    public var kind: PetNoticeKind
+    public var sessionId: String?
+    public var title: String?
+    public var at: Int64
+
+    public init(id: String, kind: PetNoticeKind, sessionId: String? = nil, title: String? = nil, at: Int64) {
+        self.id = id
+        self.kind = kind
+        self.sessionId = sessionId
+        self.title = title
+        self.at = max(0, at)
+    }
+}
+
+/// A display-only marker for an asynchronous tool. It never means the session is running.
+public struct PetActivitySpotlight: Codable, Equatable, Sendable {
+    public var kind: String
+    public var at: Int64
+
+    public init(kind: String, at: Int64) {
+        self.kind = kind
+        self.at = max(0, at)
+    }
+}
+
 public struct PetRole: Codable, Equatable, Identifiable, Sendable {
     public let id: String
     public let name: String
@@ -44,6 +83,7 @@ public struct PetActivity: Codable, Equatable, Sendable {
     public var toolName: String?
     public var lastActivityAt: Int64
     public var hint: PetActivityHint?
+    public var spotlight: PetActivitySpotlight?
 
     public init(
         sessionId: String? = nil,
@@ -53,7 +93,8 @@ public struct PetActivity: Codable, Equatable, Sendable {
         status: PetActivityStatus = .idle,
         toolName: String? = nil,
         lastActivityAt: Int64 = 0,
-        hint: PetActivityHint? = nil
+        hint: PetActivityHint? = nil,
+        spotlight: PetActivitySpotlight? = nil
     ) {
         self.sessionId = sessionId
         self.title = title
@@ -63,6 +104,7 @@ public struct PetActivity: Codable, Equatable, Sendable {
         self.toolName = toolName
         self.lastActivityAt = lastActivityAt
         self.hint = hint
+        self.spotlight = spotlight
     }
 }
 
@@ -83,6 +125,27 @@ public struct PetViewState: Equatable, Sendable {
     public let activity: PetActivity
     public let selection: PetSelection
     public let appConnected: Bool
+    public let followMode: PetFollowMode
+    public let concurrentSessions: Int
+    public let notifications: [PetNotice]
+
+    public init(
+        roles: [PetRole],
+        activity: PetActivity,
+        selection: PetSelection,
+        appConnected: Bool,
+        followMode: PetFollowMode = .latest,
+        concurrentSessions: Int = 0,
+        notifications: [PetNotice] = []
+    ) {
+        self.roles = roles
+        self.activity = activity
+        self.selection = selection
+        self.appConnected = appConnected
+        self.followMode = followMode
+        self.concurrentSessions = max(0, concurrentSessions)
+        self.notifications = notifications
+    }
 
     /// Stale activity remains available as data, but must not keep animating as live work.
     public var displayStatus: PetActivityStatus {
@@ -93,17 +156,47 @@ public struct PetViewState: Equatable, Sendable {
     public var displayHint: PetActivityHint? {
         appConnected ? activity.hint : nil
     }
+
+    public var displaySpotlight: PetActivitySpotlight? {
+        appConnected ? activity.spotlight : nil
+    }
+
+    /// Cross-session concurrency is only meaningful while the app is connected and unbound.
+    public var displayFollowMode: PetFollowMode {
+        appConnected ? followMode : .latest
+    }
+
+    public var displayConcurrentSessions: Int {
+        appConnected ? concurrentSessions : 0
+    }
+
+    public var displayNotifications: [PetNotice] {
+        appConnected ? notifications : []
+    }
 }
 
 public struct PetSnapshotDTO: Equatable, Sendable {
     public let revision: Int64
     public let characters: [PetRole]
     public let activity: PetActivity
+    public let followMode: PetFollowMode
+    public let concurrentSessions: Int
+    public let notifications: [PetNotice]
 
-    public init(revision: Int64, characters: [PetRole], activity: PetActivity) {
+    public init(
+        revision: Int64,
+        characters: [PetRole],
+        activity: PetActivity,
+        followMode: PetFollowMode = .latest,
+        concurrentSessions: Int = 0,
+        notifications: [PetNotice] = []
+    ) {
         self.revision = revision
         self.characters = characters
         self.activity = activity
+        self.followMode = followMode
+        self.concurrentSessions = max(0, concurrentSessions)
+        self.notifications = notifications
     }
 }
 
@@ -126,6 +219,9 @@ public final class PetStateStore: @unchecked Sendable {
     private var selection: PetSelection
     private var snapshotRevision: Int64 = 0
     private var lastSnapshotReceivedAt: Int64 = 0
+    private var followMode: PetFollowMode = .latest
+    private var concurrentSessions = 0
+    private var notifications: [PetNotice] = []
     private let connectionTimeoutMs: Int64 = 8_000
 
     public init(selection: PetSelection = PetSelection()) {
@@ -139,7 +235,10 @@ public final class PetStateStore: @unchecked Sendable {
             roles: roles,
             activity: activity,
             selection: selection,
-            appConnected: lastSnapshotReceivedAt > 0 && now >= lastSnapshotReceivedAt && now - lastSnapshotReceivedAt <= connectionTimeoutMs
+            appConnected: lastSnapshotReceivedAt > 0 && now >= lastSnapshotReceivedAt && now - lastSnapshotReceivedAt <= connectionTimeoutMs,
+            followMode: followMode,
+            concurrentSessions: concurrentSessions,
+            notifications: notifications
         )
     }
 
@@ -170,6 +269,9 @@ public final class PetStateStore: @unchecked Sendable {
         snapshotRevision = snapshot.revision
         roles = snapshot.characters
         activity = snapshot.activity
+        followMode = snapshot.followMode
+        concurrentSessions = snapshot.concurrentSessions
+        notifications = snapshot.notifications
         lastSnapshotReceivedAt = max(receivedAt, lastSnapshotReceivedAt)
         if !roles.contains(where: { $0.id == selection.characterId }), let first = roles.first {
             selection = PetSelection(

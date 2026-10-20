@@ -16,10 +16,24 @@ const PANEL_SOURCE = fs.readFileSync("apps/hana-desktop-pet/ui/assets/panel.js",
 const PANEL_HTML = fs.readFileSync("apps/hana-desktop-pet/ui/panel.html", "utf8");
 const PANEL_CSS = fs.readFileSync("apps/hana-desktop-pet/ui/assets/panel.css", "utf8");
 
+// 这两个版本号来自各端的单一来源，不在测试里手抄一份：
+// Windows 在 pet-windows/version.json，macOS 在 Resources/Info.plist（CFBundleShortVersionString）。
+const WINDOWS_VERSION = JSON.parse(
+  fs.readFileSync("pet-windows/version.json", "utf8")).version;
+const MAC_VERSION = fs.readFileSync("pet-macos/Resources/Info.plist", "utf8")
+  .match(/<key>CFBundleShortVersionString<\/key>\s*<string>([^<]+)<\/string>/)?.[1];
+assert.ok(WINDOWS_VERSION, "pet-windows/version.json exposes a version");
+assert.ok(MAC_VERSION, "Info.plist exposes CFBundleShortVersionString");
+
 const WINDOWS_URL =
-  "https://github.com/wqh0201-stack/hana-desk-pet/releases/download/windows-0.2.0/HanaDesktopPet-windows-0.2.0-portable.zip";
+  `https://github.com/wqh0201-stack/hana-desk-pet/releases/download/windows-${WINDOWS_VERSION}/HanaDesktopPet-windows-${WINDOWS_VERSION}-portable.zip`;
 const MAC_URL =
-  "https://github.com/wqh0201-stack/hana-desk-pet/releases/download/console-0.6.5/HanaDesktopPet-crosspet-v0.5.8-local.zip";
+  `https://github.com/wqh0201-stack/hana-desk-pet/releases/download/pet-${MAC_VERSION}/HanaDesktopPet-crosspet-v${MAC_VERSION}-local.zip`;
+// 这两条是协议 v3 时代的旧入口；v4 候选不得再出现。
+const RETIRED_URLS = [
+  "https://github.com/wqh0201-stack/hana-desk-pet/releases/download/windows-0.2.0/HanaDesktopPet-windows-0.2.0-portable.zip",
+  "https://github.com/wqh0201-stack/hana-desk-pet/releases/download/console-0.6.5/HanaDesktopPet-crosspet-v0.5.8-local.zip",
+];
 
 function makeStore(overrides = {}) {
   return {
@@ -339,13 +353,35 @@ test("connecting again clears a stale fallback instead of keeping a dead link", 
   assert.equal(panel.text("onboarding-fallback-url"), "");
 });
 
+test("both download entries agree in panel.js and panel.html and track the shipped versions", () => {
+  // 上一版回归：控制台已是 v4，两个入口却还指向 v3 的 0.2.0 / 0.5.8。
+  // 这里把「允许列表」「静态备用链接」「各端版本来源」三处钉在一起。
+  const block = PANEL_SOURCE.slice(PANEL_SOURCE.indexOf("const PET_DOWNLOADS"),
+    PANEL_SOURCE.indexOf("const nodes = {"));
+  const entries = Object.fromEntries([...block.matchAll(
+    /(windows|mac): Object\.freeze\(\{\s*url: "([^"]+)"/g)].map(([, platform, url]) => [platform, url]));
+  assert.deepEqual(entries, { windows: WINDOWS_URL, mac: MAC_URL },
+    "PET_DOWNLOADS carries exactly the current v4 assets");
+
+  const hrefs = Object.fromEntries([...PANEL_HTML.matchAll(
+    /<a\b[^>]*id="download-(windows|mac)"[^>]*href="([^"]+)"/g)]
+    .map(([, platform, href]) => [platform, href]));
+  assert.deepEqual(hrefs, entries, "the static fallback links match the allow-list exactly");
+
+  for (const url of RETIRED_URLS) {
+    assert.ok(!PANEL_SOURCE.includes(url), `panel.js still offers a v3 download: ${url}`);
+    assert.ok(!PANEL_HTML.includes(url), `panel.html still offers a v3 download: ${url}`);
+  }
+  assert.ok(!PANEL_HTML.includes("windows-0.2.0"), "the install copy must not name the retired release");
+});
+
 test("the static markup keeps link semantics, both platforms, and the short install steps", () => {
   const anchors = [...PANEL_HTML.matchAll(/<a\b[^>]*id="(download-[a-z]+)"[^>]*>/g)];
   assert.equal(anchors.length, 2, "exactly two platform entries");
   assert.match(PANEL_HTML, /id="download-windows"[\s\S]*?下载 Windows 版/);
   assert.match(PANEL_HTML, /id="download-mac"[\s\S]*?下载 macOS 版/);
-  assert.ok(PANEL_HTML.includes(WINDOWS_URL), "Windows href is the agreed release asset");
-  assert.ok(PANEL_HTML.includes(MAC_URL), "macOS href is the published 0.5.8 asset");
+  assert.ok(PANEL_HTML.includes(WINDOWS_URL), "Windows href is the v4 companion asset");
+  assert.ok(PANEL_HTML.includes(MAC_URL), "macOS href is the v4 companion asset");
   assert.doesNotMatch(PANEL_HTML, /releases\/latest/, "no /releases/latest shortcut");
   assert.doesNotMatch(PANEL_HTML, /HanaDesktopPet\.exe"/, "never link a bare exe");
   for (const href of [WINDOWS_URL, MAC_URL]) {
@@ -359,13 +395,14 @@ test("the static markup keeps link semantics, both platforms, and the short inst
   assert.match(PANEL_HTML, /不必关闭安全防护/);
   assert.match(PANEL_HTML, /安装说明/, "the detailed help entry exists");
   // The Windows release is described as a release link, never as a live download.
-  assert.match(PANEL_HTML, /windows-0\.2\.0/);
+  assert.ok(PANEL_HTML.includes(`windows-${WINDOWS_VERSION}`), "the install note names the current Windows release");
   // 不得把「打不开」归因成「还没上线」：网络/权限/浏览器失败都不等于未发布。
   assert.doesNotMatch(PANEL_HTML, /还没上线/);
   assert.doesNotMatch(PANEL_HTML, /打不开就是/);
   assert.doesNotMatch(PANEL_HTML, /未发布|尚未发布|等待发布/);
   // 只保留可校验的来源提示与系统安全提示。
-  assert.match(PANEL_HTML, /核对下载来源是 Release「windows-0\.2\.0」/);
+  assert.ok(PANEL_HTML.includes(`核对下载来源是 Release「windows-${WINDOWS_VERSION}」`),
+    "the security note names the current Windows release");
   assert.doesNotMatch(PANEL_HTML, /插件市场|已上架|market/);
 });
 

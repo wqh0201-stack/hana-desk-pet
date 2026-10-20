@@ -118,6 +118,44 @@ swiftc -parse-as-library -module-cache-path "$MODULE_CACHE" -o "$CHECK_DIR/PoseD
   tests/pose-drag-pickup-checks.swift
 "$CHECK_DIR/PoseDragPickUpChecks" "$ASSETS"
 
+echo "== Status subtitle checks (E) =="
+swiftc -parse-as-library -module-cache-path "$MODULE_CACHE" -o "$CHECK_DIR/SubtitleChecks" \
+  "$CORE_DIR/PetState.swift" \
+  "$CORE_DIR/PetNoticeCenter.swift" \
+  "$CORE_DIR/PetPoseTimeline.swift" \
+  "$CORE_DIR/PetBubbleLayout.swift" \
+  "$CORE_DIR/PetBubbleTheme.swift" \
+  "$CORE_DIR/PetSubtitleCatalog.swift" \
+  "$CORE_DIR/PetSubtitleSelector.swift" \
+  tests/pose-subtitle-checks.swift
+"$CHECK_DIR/SubtitleChecks"
+
+echo "== Bubble render checks (F, offscreen AppKit) =="
+swiftc -module-cache-path "$MODULE_CACHE" -o "$CHECK_DIR/BubbleRenderChecks" \
+  "$CORE_DIR/PetState.swift" \
+  "$CORE_DIR/PetPoseTimeline.swift" \
+  "$CORE_DIR/PetBubbleLayout.swift" \
+  "$CORE_DIR/PetBubbleTheme.swift" \
+  tests/bubble-render-checks.swift
+"$CHECK_DIR/BubbleRenderChecks"
+
+echo "== Bubble view checks (G, the real PET bubble view rendered offscreen) =="
+# The app's own PetBubbleController is compiled without its `import PetCore` line, because
+# this check links PetCore sources directly rather than the built module.
+sed 's/^import PetCore$//' "$PROJECT_ROOT/pet-macos/Sources/HanaDesktopPet/PetBubbleController.swift" \
+  > "$CHECK_DIR/PetBubbleControllerNoModule.swift"
+swiftc -parse-as-library -module-cache-path "$MODULE_CACHE" -o "$CHECK_DIR/BubbleViewChecks" \
+  "$CORE_DIR/PetState.swift" \
+  "$CORE_DIR/PetPoseTimeline.swift" \
+  "$CORE_DIR/PetBubbleLayout.swift" \
+  "$CORE_DIR/PetBubbleTheme.swift" \
+  "$CORE_DIR/PetNoticeCenter.swift" \
+  "$CORE_DIR/PetSubtitleCatalog.swift" \
+  "$CORE_DIR/PetSubtitleSelector.swift" \
+  "$CHECK_DIR/PetBubbleControllerNoModule.swift" \
+  tests/bubble-view-checks.swift
+"$CHECK_DIR/BubbleViewChecks"
+
 echo "== Cross-layer lifecycle checks (JS projection -> native v2 -> planner -> timeline) =="
 swiftc -parse-as-library -module-cache-path "$MODULE_CACHE" -o "$CHECK_DIR/PoseLifecycleChecks" \
   "$CORE_DIR/PetState.swift" \

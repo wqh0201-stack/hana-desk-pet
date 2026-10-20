@@ -4,6 +4,7 @@ import PetCore
 final class PetWindowView: NSView, NSMenuDelegate {
     private let model: PetViewModel
     private let artwork: PetCharacterView
+    private let bubble = PetBubbleController()
     private var refreshTimer: Timer?
     private var avoidanceTimer: Timer?
     private var pointerGesture = PetDragClickGesture()
@@ -32,6 +33,11 @@ final class PetWindowView: NSView, NSMenuDelegate {
         ))
         buildInterface()
         model.onChange = { [weak self] in self?.render() }
+        artwork.onBubbleChange = { [weak self] _ in
+            // The artwork also advances notices from its own wake timer, which can fire
+            // inside a display pass. Defer the window ordering by one runloop turn.
+            DispatchQueue.main.async { self?.refreshBubble() }
+        }
         refreshTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak model] _ in
             model?.refresh()
         }
@@ -100,9 +106,26 @@ final class PetWindowView: NSView, NSMenuDelegate {
             status: state.displayStatus,
             toolName: toolName,
             lastActivityAt: state.activity.lastActivityAt,
-            hint: state.displayHint
+            hint: state.displayHint,
+            spotlight: state.displaySpotlight,
+            followMode: state.displayFollowMode,
+            concurrentSessions: state.displayConcurrentSessions,
+            notifications: state.displayNotifications,
+            noticesEnabled: model.showNotices
         )
+        refreshBubble()
         needsDisplay = true
+    }
+
+    private func refreshBubble() {
+        bubble.apply(
+            content: artwork.currentBubbleContent,
+            roleId: artwork.roleId,
+            enabled: model.showNotices,
+            reduceMotion: artwork.reduceMotionEnabled,
+            petWindow: window,
+            petArtworkTopInset: artwork.artworkTopInset()
+        )
     }
 
     override func hitTest(_ point: NSPoint) -> NSView? {
@@ -185,6 +208,11 @@ final class PetWindowView: NSView, NSMenuDelegate {
         lock.state = model.positionLocked ? .on : .off
         menu.addItem(lock)
 
+        let notices = NSMenuItem(title: "显示通知气泡", action: #selector(toggleShowNotices), keyEquivalent: "")
+        notices.target = self
+        notices.state = model.showNotices ? .on : .off
+        menu.addItem(notices)
+
         let dock = NSMenuItem(title: "停靠并锁定到角落", action: nil, keyEquivalent: "")
         let corners = NSMenu()
         corners.delegate = self
@@ -264,6 +292,10 @@ final class PetWindowView: NSView, NSMenuDelegate {
         model.setPositionLocked(!model.positionLocked)
     }
 
+    @objc private func toggleShowNotices() {
+        model.setShowNotices(!model.showNotices)
+    }
+
     @objc private func dockToCorner(_ sender: NSMenuItem) {
         guard let identifier = sender.representedObject as? String,
               let window,
@@ -306,6 +338,17 @@ private final class PetCharacterView: NSView {
     private var currentHint: PetActivityHint?
     private var currentToolName: String?
     private var lastActivityAt: Int64 = 0
+    private var currentSpotlight: PetActivitySpotlight?
+    private var currentFollowMode: PetFollowMode = .latest
+    private var currentConcurrentSessions = 0
+    private var currentNotifications: [PetNotice] = []
+    private var noticesEnabled = true
+    private var spotlightHold = PetSpotlightHold()
+    private var noticeCenter = PetNoticeCenter()
+    /// The subtitle layer: one line of dialogue keyed off the pose that actually settled.
+    private var subtitleSelector: PetSubtitleSelector?
+    private var subtitleFrame = PetSubtitleFrame.hidden
+    private var lastBubbleContent: PetBubbleContent?
     private var displayedLayers: [PetPoseLayer] = []
     private var cachedArtwork: [String: CachedArtwork] = [:]
     private var artworkUseOrder: [String] = []
@@ -317,16 +360,22 @@ private final class PetCharacterView: NSView {
     private var appUnhideObserver: NSObjectProtocol?
     private var reducedMotionObserver: NSObjectProtocol?
     var onActivate: (() -> Void)?
+    var onBubbleChange: ((PetBubbleContent?) -> Void)?
+
+    var currentBubbleContent: PetBubbleContent? { lastBubbleContent }
+    var reduceMotionEnabled: Bool { reduceMotion }
 
     init(
         catalog: PetArtworkCatalog?,
         layout: PetCharacterLayout,
         poseReadback: PetPoseReadbackStore,
-        frame frameRect: NSRect
+        frame frameRect: NSRect,
+        subtitleCatalog: PetSubtitleCatalog? = PetSubtitleCatalog.bundled()
     ) {
         self.catalog = catalog
         self.layout = layout
         self.poseReadback = poseReadback
+        self.subtitleSelector = subtitleCatalog.map { PetSubtitleSelector(catalog: $0) }
         super.init(frame: frameRect)
         setAccessibilityElement(true)
         setAccessibilityRole(.button)
@@ -418,7 +467,12 @@ private final class PetCharacterView: NSView {
         status: PetActivityStatus,
         toolName: String?,
         lastActivityAt: Int64,
-        hint: PetActivityHint?
+        hint: PetActivityHint?,
+        spotlight: PetActivitySpotlight?,
+        followMode: PetFollowMode,
+        concurrentSessions: Int,
+        notifications: [PetNotice],
+        noticesEnabled: Bool
     ) {
         let roleChanged = self.roleId != roleId
         let sessionChanged = currentSessionId != sessionId
@@ -428,11 +482,22 @@ private final class PetCharacterView: NSView {
         self.currentToolName = toolName
         self.lastActivityAt = lastActivityAt
         self.currentHint = hint
+        self.currentSpotlight = spotlight
+        self.currentFollowMode = followMode
+        self.currentConcurrentSessions = max(0, concurrentSessions)
+        self.currentNotifications = notifications
+        self.noticesEnabled = noticesEnabled
         let poses = catalog?.poseNames(forCharacterID: roleId) ?? []
-        let preferredPose = PetPosePlanner.preferredPose(for: status, toolName: toolName, hint: status == .error ? nil : hint)
+        let preferredPose = PetPosePlanner.preferredPose(for: status, toolName: toolName, hint: hint)
         let resolvedPose = PetPosePlanner.resolvedPose(preferred: preferredPose, availablePoseNames: poses)
         availablePoseNames = poses
-        workPoses = PetPosePlanner.workPoseSet(characterID: roleId, availablePoseNames: poses)
+        let normalWorkPoses = PetPosePlanner.workPoseSet(characterID: roleId, availablePoseNames: poses)
+        let unboundConcurrent = followMode != .pinned && concurrentSessions >= 2
+        let nextWorkPoses = unboundConcurrent
+            ? (PetPosePlanner.swampedWorkPoseSet(characterID: roleId, availablePoseNames: poses) ?? normalWorkPoses)
+            : normalWorkPoses
+        let workPosesChanged = workPoses != nextWorkPoses
+        workPoses = nextWorkPoses
         basePose = resolvedPose
         if roleChanged {
             clearArtworkCache()
@@ -442,9 +507,10 @@ private final class PetCharacterView: NSView {
             // A new session inherits neither the previous session's display history nor its
             // mood accumulation: the action clock, the tool tail, a pending tap response and
             // the fatigue start all restart. The continuous work clock itself stays owned by
-            // the mood tracker.
+            // the mood tracker. Cross-session notices deliberately survive.
             workScheduler = PetWorkPoseScheduler()
             moodTracker = PetPoseMoodTracker()
+            spotlightHold.reset()
             _ = timeline.interruptReaction(at: ProcessInfo.processInfo.systemUptime)
             pickUp.end()
         } else if roleChanged {
@@ -452,6 +518,10 @@ private final class PetCharacterView: NSView {
             // display phases are rebuilt for the new artwork. The pick-up frames belong to the
             // old character, so the interaction state is dropped rather than carried over.
             pickUp.end()
+            workScheduler.rebuildRhythm(workPoses: workPoses, at: ProcessInfo.processInfo.systemUptime)
+        } else if workPosesChanged {
+            // A concurrency change swaps ordinary thinking for the swamped rhythm without
+            // touching the mood tracker's continuous-work clock or the session identity.
             workScheduler.rebuildRhythm(workPoses: workPoses, at: ProcessInfo.processInfo.systemUptime)
         }
         setAccessibilityLabel("\(roleName)桌宠")
@@ -507,7 +577,19 @@ private final class PetCharacterView: NSView {
     }
 
     private func applyLatestState(at time: TimeInterval) {
-        let activeHint = status == .error ? nil : currentHint
+        let wallNow = Int64(Date().timeIntervalSince1970 * 1_000)
+        spotlightHold.update(currentSpotlight, now: time, wallNowMs: wallNow)
+        let drawingActive = spotlightHold.isActive(at: time)
+
+        // Waiting for confirmation outranks even a real error. The other hints keep
+        // their existing lower priority, so a recent error still shows oops.
+        let activeHint: PetActivityHint?
+        if let hint = currentHint {
+            activeHint = (status == .error && hint != .confirming) ? nil : hint
+        } else {
+            activeHint = nil
+        }
+
         let mood = moodTracker.update(
             status: status,
             toolName: currentToolName,
@@ -515,12 +597,39 @@ private final class PetCharacterView: NSView {
             lastActivityAt: lastActivityAt,
             at: time
         )
+        let semanticTool = status == .tool && PetPosePlanner.isSemanticToolName(currentToolName)
+        // A completion notice waits behind anything that already owns the artwork with a
+        // more urgent meaning. A generic tool action is not in this list: the completion is
+        // a deliberate, bounded notification and restores the real state afterwards.
+        let completionBlocked = activeHint != nil || status == .error || drawingActive || pickUp.isActive
+        let noticeTick = noticeCenter.update(
+            notices: currentNotifications,
+            bubblesEnabled: noticesEnabled,
+            completionBlocked: completionBlocked,
+            now: time,
+            wallNowMs: wallNow,
+            scope: currentFollowMode == .pinned ? "pinned" : "latest"
+        )
+        let completionNotice = noticeTick.presentation?.kind == .completion
+
         let preferredPose = PetPosePlanner.preferredPose(for: status, toolName: currentToolName, hint: activeHint)
         let workPose = PetPosePlanner.resolvedPose(preferred: preferredPose, availablePoseNames: availablePoseNames)
         let fallback: Bool
         let realPose: String
         let hasPriorityState: Bool
-        if activeHint == nil, let mood {
+        if activeHint == nil, status != .error, drawingActive {
+            // The drawing call has returned, but its display hold is still running. This
+            // is artwork only; `running`, status and the work clock are untouched.
+            realPose = PetPosePlanner.resolvedPose(preferred: "drawing", availablePoseNames: availablePoseNames)
+            fallback = realPose != "drawing"
+            hasPriorityState = true
+        } else if activeHint == nil, status != .error, completionNotice {
+            realPose = PetPosePlanner.resolvedPose(preferred: "happy", availablePoseNames: availablePoseNames)
+            fallback = realPose != "happy"
+            hasPriorityState = true
+        } else if activeHint == nil, !semanticTool, let mood {
+            // Ambient moods only decorate ordinary thinking. A concrete reading/writing/
+            // searching/running/delegating/drawing action always keeps its own pose.
             realPose = PetPoseMood.resolvedPose(for: mood, workPose: workPose, availablePoseNames: availablePoseNames)
             fallback = realPose != primaryPose(for: mood)
             hasPriorityState = true
@@ -576,7 +685,10 @@ private final class PetCharacterView: NSView {
             basePose: displayedPose,
             availablePoseNames: availablePoseNames,
             reduceMotion: reduceMotion,
-            allowsIdleAnimation: mood != .sleeping && activeHint == nil && !pickUpOwnsArtwork,
+            // A drawing hold and a completion celebration are deliberate poses; the idle
+            // blink cycle must not replace them while they are on screen.
+            allowsIdleAnimation: mood != .sleeping && activeHint == nil &&
+                !pickUpOwnsArtwork && !drawingActive && !completionNotice,
             hint: activeHint,
             // Frame-by-frame poses cut hard: a 0.20 s cross-fade on a 0.16 s frame would
             // overlap two poses' arms.
@@ -586,8 +698,56 @@ private final class PetCharacterView: NSView {
         // Readback stays honest: `picked-up`/`picked-up-2` are catalogued poses that really
         // are on screen, and they are not a missing-artwork substitution.
         poseReadback.update(characterId: roleId, pose: displayedPose, fallback: !pickUpOwnsArtwork && reportedFallback)
+        publishBubble(pose: displayedPose, presentation: noticeTick.presentation, pickUpOwns: pickUpOwnsArtwork, at: time)
         needsDisplay = true
         scheduleWake(at: time)
+    }
+
+    /// Publishes whichever bubble owns the surface right now. The selector decides priority
+    /// (pick-up, then confirmation, then completion, then the pose's subtitle); the window
+    /// layer only applies the user's bubble preference. The pose above is unaffected.
+    private func publishBubble(
+        pose: String,
+        presentation: PetNoticePresentation?,
+        pickUpOwns: Bool,
+        at time: TimeInterval
+    ) {
+        guard let subtitleSelector else {
+            publishLegacyNotice(presentation)
+            return
+        }
+        var selector = subtitleSelector
+        subtitleFrame = selector.update(
+            pose: pose,
+            roleId: roleId,
+            notice: presentation,
+            isPickUp: pickUpOwns,
+            enabled: noticesEnabled,
+            at: time
+        )
+        self.subtitleSelector = selector
+        let next = subtitleFrame.content
+        guard next != lastBubbleContent else { return }
+        lastBubbleContent = next
+        onBubbleChange?(next)
+    }
+
+    private func publishLegacyNotice(_ presentation: PetNoticePresentation?) {
+        guard let presentation, presentation.bubbleVisible else {
+            let hadContent = lastBubbleContent != nil
+            lastBubbleContent = nil
+            if hadContent { onBubbleChange?(nil) }
+            return
+        }
+        let next = PetBubbleContent(
+            id: presentation.id,
+            style: .notice,
+            title: presentation.title,
+            status: presentation.status
+        )
+        guard next != lastBubbleContent else { return }
+        lastBubbleContent = next
+        onBubbleChange?(next)
     }
 
     /// The first candidate of PetPoseMood.resolvedPose, used only to report whether
@@ -620,6 +780,9 @@ private final class PetCharacterView: NSView {
             moodTracker.nextDeadline(after: time),
             workScheduler.nextDeadline(after: time),
             pickUp.nextDeadline(after: time, reduceMotion: reduceMotion),
+            spotlightHold.nextDeadline(after: time),
+            noticeCenter.currentPresentation()?.endsAt,
+            subtitleFrame.nextDeadline,
         ]
             .compactMap { $0 }
             .min()
@@ -717,6 +880,19 @@ private final class PetCharacterView: NSView {
             sourceHeight: Double(frame.height)
         )
         return NSRect(x: rect.x, y: rect.y, width: rect.width, height: rect.height)
+    }
+
+    /// Transparent padding this view reserves above the drawn artwork. The window is taller
+    /// than the character so its bob and sway never clip; the bubble hangs from the artwork's
+    /// top edge, so it needs this value rather than the view's own height.
+    func artworkTopInset() -> Double {
+        let frameSize = frame.size
+        let rect = layout.imageRect(
+            containerWidth: Double(bounds.width),
+            sourceWidth: Double(frameSize.width),
+            sourceHeight: Double(frameSize.height)
+        )
+        return max(0, Double(bounds.height) - (rect.y + rect.height))
     }
 
     func hitShapeContains(_ point: NSPoint) -> Bool {

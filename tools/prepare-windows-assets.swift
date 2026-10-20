@@ -144,7 +144,7 @@ do {
     document["assetHandling"] = handling
     try JSONSerialization.data(withJSONObject: document, options: [.prettyPrinted, .sortedKeys]).write(to: artworkRoot.appendingPathComponent("catalog.json"))
     try catalogData.write(to: artworkRoot.appendingPathComponent("source-catalog.json"))
-    for file in ["CHARACTERS-LICENSE.md", "ATTRIBUTION.md"] {
+    for file in ["CHARACTERS-LICENSE.md", "ATTRIBUTION.md", "pet-lines.json"] {
         try manager.copyItem(at: sourceRoot.appendingPathComponent(file), to: artworkRoot.appendingPathComponent(file))
     }
     let note = """

@@ -1,8 +1,20 @@
-import { cleanId, cleanText, effectiveHint, effectiveStatus } from "./state-core.mjs";
+import {
+  cleanId,
+  cleanText,
+  COMPLETION_NOTICE_TTL_MS,
+  concurrentWorkCount,
+  DRAWING_SPOTLIGHT_TTL_MS,
+  effectiveHint,
+  effectiveStatus,
+  isClosedSession,
+  MAX_NOTICE_COMPLETIONS,
+  MAX_NOTICE_CONFIRMATIONS,
+  noticeIdFor,
+} from "./state-core.mjs";
 
 export const PET_BASE_URL = "http://127.0.0.1:43127";
-export const PET_PROTOCOL_VERSION = 3;
-export const PET_SCHEMA_VERSION = 3;
+export const PET_PROTOCOL_VERSION = 4;
+export const PET_SCHEMA_VERSION = 4;
 export const BRIDGE_ENABLED_KEY = "hana-pet.bridge.enabled";
 export const BRIDGE_STATUS_KEY = "hana-pet.bridge.status";
 export const SELECTION_KEY = "hana-pet.selection";
@@ -37,10 +49,10 @@ export const DEFAULT_CHARACTER_ID = PET_CATALOG[0].id;
 const MAX_BODY_BYTES = 16 * 1024;
 const RESPONSE_LIMIT_BYTES = 16 * 1024;
 const ROUTES = new Map([
-  ["/v3/hello", new Set(["GET"])],
-  ["/v3/snapshot", new Set(["POST"])],
-  ["/v3/selection", new Set(["GET", "POST"])],
-  ["/v3/state", new Set(["GET"])],
+  ["/v4/hello", new Set(["GET"])],
+  ["/v4/snapshot", new Set(["POST"])],
+  ["/v4/selection", new Set(["GET", "POST"])],
+  ["/v4/state", new Set(["GET"])],
 ]);
 const POSE_STATE_KEYS = "characterId,fallback,pose,revision,schemaVersion,since";
 const POSE_NAME_PATTERN = /^[a-z0-9][a-z0-9_-]{0,47}$/;
@@ -139,8 +151,10 @@ export function createSessionDiagnostics() {
 }
 
 /** Build a strict, body-free projection; never pass a raw Hana bus event here. */
-export function toPetSnapshot(snapshot, now = Date.now()) {
+export function toPetSnapshot(snapshot, now = Date.now(), options = {}) {
+  const { followMode = "latest", pinnedSessionId = null } = options;
   const current = snapshot && typeof snapshot === "object" ? snapshot.current : null;
+  const safeFollowMode = followMode === "pinned" ? "pinned" : "latest";
   return {
     schemaVersion: PET_SCHEMA_VERSION,
     revision: finiteInt(now, Date.now()),
@@ -152,11 +166,82 @@ export function toPetSnapshot(snapshot, now = Date.now()) {
       agentName: cleanText(current?.agentName, 80),
       status: statusFor(current, now),
       toolName: cleanText(current?.toolName, 80),
-      // The only new field in schema 3: one frozen enum value, or null.
+      // The only hint field is one frozen enum value, or null.
       hint: effectiveHint(current, now),
       lastActivityAt: finiteInt(current?.lastActivityAt),
+      // Display-only marker for an asynchronous drawing tool; never a running flag.
+      spotlight: spotlightFor(current, now),
     },
+    // Bounded follow intent: the pet may only apply cross-session concurrency when unbound.
+    followMode: safeFollowMode,
+    concurrentSessions: concurrentWorkCount(snapshot?.sessions ?? [], now),
+    notifications: collectPetNotices(snapshot, now, { followMode: safeFollowMode, pinnedSessionId }),
   };
+}
+
+/** A drawing marker lives only as long as the display layer may still use it. */
+function spotlightFor(session, now) {
+  if (!session || session.unresolved === true || isClosedSession(session)) return null;
+  const at = Number.isFinite(session.drawingAt) ? session.drawingAt : 0;
+  if (at <= 0 || at > now + 1000) return null;
+  if (now - at > DRAWING_SPOTLIGHT_TTL_MS) return null;
+  return { kind: "drawing", at };
+}
+
+/**
+ * Reduce the cross-session presentation events to a bounded, deterministic list.
+ * A confirmation is always listed while its hint is fresh; a completion is listed
+ * only for a genuine, non-retried, non-errored run end and only for a short TTL.
+ * When pinned, other sessions never contribute anything.
+ */
+export function collectPetNotices(snapshot, now = Date.now(), options = {}) {
+  const { followMode = "latest", pinnedSessionId = null } = options;
+  const sessions = Array.isArray(snapshot?.sessions) ? snapshot.sessions : [];
+  const pinned = followMode === "pinned" ? cleanId(pinnedSessionId) : null;
+  const confirmations = [];
+  const completions = [];
+  const seenIds = new Set();
+  for (const session of sessions) {
+    if (!session || typeof session !== "object") continue;
+    if (session.unresolved === true) continue;
+    if (pinned && session.sessionId !== pinned) continue;
+    if (isClosedSession(session)) continue;
+    const title = cleanText(session.displayTitle ?? session.title, 120);
+    if (effectiveHint(session, now) === "confirming") {
+      const id = noticeIdFor("confirmation", session.sessionId, session.hintAt);
+      if (!seenIds.has(id)) {
+        seenIds.add(id);
+        confirmations.push({
+          id,
+          kind: "confirmation",
+          sessionId: session.sessionId,
+          title,
+          at: session.hintAt,
+        });
+      }
+      // A session waiting for the user is not a finished turn to celebrate.
+      continue;
+    }
+    const endedAt = Number.isFinite(session.lastRunEndedAt) ? session.lastRunEndedAt : 0;
+    if (endedAt <= 0 || endedAt > now + 1000 || now - endedAt > COMPLETION_NOTICE_TTL_MS) continue;
+    const id = noticeIdFor("completion", session.sessionId, endedAt);
+    if (seenIds.has(id)) continue;
+    seenIds.add(id);
+    completions.push({
+      id,
+      kind: "completion",
+      sessionId: session.sessionId,
+      title,
+      at: endedAt,
+    });
+  }
+  const byTime = (a, b) => a.at - b.at || a.id.localeCompare(b.id);
+  confirmations.sort(byTime);
+  completions.sort(byTime);
+  return [
+    ...confirmations.slice(0, MAX_NOTICE_CONFIRMATIONS),
+    ...completions.slice(0, MAX_NOTICE_COMPLETIONS),
+  ];
 }
 
 function validateSelectionResponse(value) {
@@ -267,7 +352,7 @@ export class PetBridgeClient {
   }
 
   async probe() {
-    const result = await this.request("/v3/hello", "GET");
+    const result = await this.request("/v4/hello", "GET");
     if (result.status === 404) throw new PetBridgeError("PET_SERVICE_MISMATCH", "version_mismatch");
     if (!result.ok || !result.data || typeof result.data !== "object" || Array.isArray(result.data)) {
       throw new PetBridgeError("PET_SERVICE_MISMATCH", "invalid_response");
@@ -284,7 +369,7 @@ export class PetBridgeClient {
   }
 
   async publish(snapshot) {
-    const result = await this.request("/v3/snapshot", "POST", snapshot);
+    const result = await this.request("/v4/snapshot", "POST", snapshot);
     if (!result.ok || result.data?.schemaVersion !== PET_SCHEMA_VERSION || result.data?.accepted !== true) {
       throw new Error("PET_SNAPSHOT_REJECTED");
     }
@@ -292,13 +377,13 @@ export class PetBridgeClient {
   }
 
   async getSelection() {
-    const result = await this.request("/v3/selection", "GET");
+    const result = await this.request("/v4/selection", "GET");
     if (!result.ok) throw new Error("PET_SELECTION_UNAVAILABLE");
     return validateSelectionResponse(result.data);
   }
 
   async getPoseState() {
-    const result = await this.request("/v3/state", "GET");
+    const result = await this.request("/v4/state", "GET");
     if (result.status === 404) throw new PetBridgeError("PET_POSE_STATE_UNAVAILABLE", "version_mismatch");
     if (!result.ok) throw new PetBridgeError("PET_POSE_STATE_UNAVAILABLE", "invalid_response");
     const state = validatePoseStateResponse(result.data);
@@ -315,7 +400,7 @@ export class PetBridgeClient {
 
   async setSelection(selection, expectedRevision) {
     const local = normalizeSelection(selection);
-    const result = await this.request("/v3/selection", "POST", {
+    const result = await this.request("/v4/selection", "POST", {
       schemaVersion: PET_SCHEMA_VERSION,
       characterId: local.characterId,
       expectedRevision: finiteInt(expectedRevision),

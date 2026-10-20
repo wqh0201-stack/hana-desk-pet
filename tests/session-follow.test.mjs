@@ -450,9 +450,9 @@ test("the pet projection stays body-free while following a pinned session", asyn
 
   assert.ok(harness.state.published.length > 0, "the bridge published a snapshot");
   for (const dto of harness.state.published) {
-    assert.deepEqual(Object.keys(dto).sort(), ["activity", "characters", "revision", "schemaVersion"]);
+    assert.deepEqual(Object.keys(dto).sort(), ["activity", "characters", "concurrentSessions", "followMode", "notifications", "revision", "schemaVersion"]);
     assert.deepEqual(Object.keys(dto.activity).sort(),
-      ["agentId", "agentName", "hint", "lastActivityAt", "sessionId", "status", "title", "toolName"]);
+      ["agentId", "agentName", "hint", "lastActivityAt", "sessionId", "spotlight", "status", "title", "toolName"]);
     assertClean(dto, "published dto");
   }
   const latest = harness.state.published[harness.state.published.length - 1];
@@ -824,4 +824,86 @@ test("the legacySessionPath selector resolves a session when sessionPath fails",
   assert.equal(snapshot.current.sessionId, id, "the legacy selector resolved the session");
   assert.equal(snapshot.sessions.some((item) => item.sessionId.startsWith("unresolved:")), false);
   assert.equal(harness.read(SESSION_DIAGNOSTICS_KEY).get, null, "a success clears the diagnostic");
+});
+
+test("a completion outside the bound scope is retired, never re-reported on unbind", async () => {
+  const harness = await mount({ seed: { [BRIDGE_ENABLED_KEY]: true } });
+  await emit(harness, { type: "agent_start", sessionId: "session-beta-0002" }, "/private/session/beta");
+  await emit(harness, { type: "agent_end", sessionId: "session-beta-0002", willRetry: false }, "/private/session/beta");
+  await emit(harness, { type: "agent_start", sessionId: "session-alpha-0001" }, "/private/session/alpha");
+  await harness.tick(BRIDGE_POLL_MS * 2);
+
+  const beforeBind = harness.read(SNAPSHOT_KEY);
+  const betaBefore = beforeBind.sessions.find((item) => item.sessionId === "session-beta-0002");
+  assert.ok(betaBefore.lastRunEndedAt > 0, "B's completion is recorded while unbound");
+
+  await request(harness, "session-alpha-0001");
+  await harness.tick(BRIDGE_POLL_MS * 2);
+  const bound = harness.read(SNAPSHOT_KEY);
+  const betaBound = bound.sessions.find((item) => item.sessionId === "session-beta-0002");
+  assert.equal(betaBound.lastRunEndedAt, 0, "binding A retires B's out-of-scope completion");
+  const boundDto = harness.state.published[harness.state.published.length - 1];
+  assert.equal(boundDto.followMode, "pinned");
+  assert.equal(boundDto.notifications.some((item) => item.sessionId === "session-beta-0002"), false);
+
+  await request(harness, null);
+  await harness.tick(BRIDGE_POLL_MS * 2);
+  const unboundDto = harness.state.published[harness.state.published.length - 1];
+  assert.equal(unboundDto.followMode, "latest");
+  assert.equal(unboundDto.notifications.some((item) => item.sessionId === "session-beta-0002"), false,
+    "unbinding does not re-report the old completion");
+});
+
+test("a completion produced while another session is bound is retired before unbind", async () => {
+  // This is the reviewer's exact order: bind A first, then let B finish while bound.
+  const harness = await mount({ seed: { [BRIDGE_ENABLED_KEY]: true } });
+  await emit(harness, { type: "agent_start", sessionId: "session-alpha-0001" }, "/private/session/alpha");
+  await request(harness, "session-alpha-0001");
+  await harness.tick(BRIDGE_POLL_MS * 2);
+  assert.equal(harness.read(FOLLOW_KEY).pinnedSessionId, "session-alpha-0001");
+
+  await emit(harness, { type: "agent_start", sessionId: "session-beta-0002" }, "/private/session/beta");
+  await emit(harness, { type: "agent_end", sessionId: "session-beta-0002", willRetry: false }, "/private/session/beta");
+  await harness.tick(BRIDGE_POLL_MS * 2);
+
+  const bound = harness.read(SNAPSHOT_KEY);
+  const betaBound = bound.sessions.find((item) => item.sessionId === "session-beta-0002");
+  assert.equal(betaBound.lastRunEndedAt, 0,
+    "a completion produced outside the bound scope is retired immediately");
+  const boundDto = harness.state.published[harness.state.published.length - 1];
+  assert.equal(boundDto.followMode, "pinned");
+  assert.deepEqual(boundDto.notifications.filter((item) => item.sessionId === "session-beta-0002"), [],
+    "bound notifications never include B");
+
+  await request(harness, null);
+  await harness.tick(BRIDGE_POLL_MS * 2);
+  const unbound = harness.read(SNAPSHOT_KEY);
+  const betaUnbound = unbound.sessions.find((item) => item.sessionId === "session-beta-0002");
+  assert.equal(betaUnbound.lastRunEndedAt, 0, "unbinding does not resurrect B's retired completion");
+  const unboundDto = harness.state.published[harness.state.published.length - 1];
+  assert.equal(unboundDto.followMode, "latest");
+  assert.deepEqual(unboundDto.notifications.filter((item) => item.sessionId === "session-beta-0002"), [],
+    "unbinding reports no B completion");
+});
+
+test("a retired completion does not erase the bound session's own valid notice", async () => {
+  const harness = await mount({ seed: { [BRIDGE_ENABLED_KEY]: true } });
+  await emit(harness, { type: "agent_start", sessionId: "session-alpha-0001" }, "/private/session/alpha");
+  await request(harness, "session-alpha-0001");
+  await harness.tick(BRIDGE_POLL_MS * 2);
+
+  await emit(harness, { type: "agent_start", sessionId: "session-beta-0002" }, "/private/session/beta");
+  await emit(harness, { type: "agent_end", sessionId: "session-beta-0002", willRetry: false }, "/private/session/beta");
+  await emit(harness, { type: "agent_end", sessionId: "session-alpha-0001", willRetry: false }, "/private/session/alpha");
+  await harness.tick(BRIDGE_POLL_MS * 2);
+
+  const boundDto = harness.state.published[harness.state.published.length - 1];
+  assert.equal(boundDto.followMode, "pinned");
+  assert.deepEqual(boundDto.notifications
+    .filter((item) => item.kind === "completion")
+    .map((item) => item.sessionId), ["session-alpha-0001"],
+    "only the bound session's completion survives the out-of-scope retirement");
+  const snapshot = harness.read(SNAPSHOT_KEY);
+  assert.ok(snapshot.sessions.find((item) => item.sessionId === "session-alpha-0001").lastRunEndedAt > 0,
+    "the bound session's own completion is kept");
 });

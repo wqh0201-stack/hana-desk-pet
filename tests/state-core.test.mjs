@@ -3,8 +3,12 @@ import assert from "node:assert/strict";
 import {
   applyEvent,
   applyHintEvent,
+  COMPLETION_NOTICE_TTL_MS,
+  concurrentWorkCount,
   createFollow,
   createSnapshot,
+  DRAWING_SPOTLIGHT_TTL_MS,
+  ERROR_HOLD_MS,
   HINT_TTL_MS,
   displayTitleFor,
   effectiveHint,
@@ -12,6 +16,7 @@ import {
   FOLLOW_NOTICE_TTL_MS,
   FOLLOW_SWITCH_MARGIN_MS,
   FOLLOW_ACTIVE_WINDOW_MS,
+  isDrawingToolName,
   isPinnableSessionId,
   isPinnableEntry,
   isClosedSession,
@@ -20,12 +25,14 @@ import {
   isUnresolvedSessionId,
   mergeSnapshot,
   normalizeFollow,
+  noticeIdFor,
   PET_HINTS,
   PIN_MISSING_GRACE_MS,
   projectSessionList,
   rebuildSnapshot,
   recoverSnapshot,
   resolveFollow,
+  RUNNING_STALE_MS,
   unresolvedKeyFor,
 } from "../apps/hana-desktop-pet/state-core.mjs";
 
@@ -314,10 +321,10 @@ test("continuous tools replace the active tool and tool starts interrupt older f
   }, 8040);
   assert.equal(state.current.toolName, null);
   assert.equal(effectiveStatus(state.current, 8040), "error");
-  assert.equal(effectiveStatus(state.current, 10541), "working");
+  assert.equal(effectiveStatus(state.current, 12041), "working", "a 4 s error hold expires back to the real running state");
 });
 
-test("tool error feedback is brief, survives immediate work resumption, then yields to the final lifecycle state", () => {
+test("an errored run is never reported as a successful completion", () => {
   let state = applyEvent(createSnapshot(), identity("session-recover001"), { type: "agent_start" }, 9000);
   state = applyEvent(state, identity("session-recover001"), {
     type: "tool_execution_start", toolName: "file.read",
@@ -330,11 +337,59 @@ test("tool error feedback is brief, survives immediate work resumption, then yie
   assert.equal(state.current.running, true);
   state = applyEvent(state, identity("session-recover001"), { type: "turn_start" }, 9030);
   assert.equal(effectiveStatus(state.current, 9030), "error");
-  assert.equal(effectiveStatus(state.current, 11521), "working");
+  assert.equal(effectiveStatus(state.current, 13021), "working");
   state = applyEvent(state, identity("session-recover001"), { type: "agent_end" }, 12000);
-  assert.equal(effectiveStatus(state.current, 12000), "success");
+  assert.equal(state.current.status, "error", "the last observed outcome was an error");
+  assert.equal(state.current.lastRunEndedAt, 0, "an errored run raises no completion notice");
   assert.equal(state.current.running, false);
+  assert.equal(effectiveStatus(state.current, 12000), "error");
+  assert.equal(effectiveStatus(state.current, 16001), "idle", "once the hold expires the honest display is idle, not success");
   assert.equal(JSON.stringify(state).includes("private error body"), false);
+});
+
+test("a fast recovery inside the error hold still completes when the run ends", () => {
+  let state = applyEvent(createSnapshot(), identity("session-fast-recover"), { type: "agent_start" }, 21000);
+  state = applyEvent(state, identity("session-fast-recover"), {
+    type: "tool_execution_start", toolName: "read_file",
+  }, 21010);
+  state = applyEvent(state, identity("session-fast-recover"), {
+    type: "tool_execution_end", isError: true,
+  }, 21020);
+  assert.equal(effectiveStatus(state.current, 21020), "error");
+  // Recovery one second later: the error pose is still held, but the run is healthy.
+  state = applyEvent(state, identity("session-fast-recover"), {
+    type: "tool_execution_start", toolName: "write_file",
+  }, 22020);
+  state = applyEvent(state, identity("session-fast-recover"), {
+    type: "tool_execution_end", isError: false,
+  }, 22030);
+  assert.equal(effectiveStatus(state.current, 22030), "error", "the error pose keeps its four-second hold");
+  assert.equal(state.current.lastToolSuccessAt, 22030, "the recovery is recorded even while the pose holds");
+  state = applyEvent(state, identity("session-fast-recover"), { type: "agent_end" }, 22040);
+  assert.equal(state.current.status, "error", "the display still holds the error pose");
+  assert.equal(state.current.statusAt, 21020, "the error keeps its original display timestamp");
+  assert.equal(state.current.lastRunEndedAt, 22040, "the lifecycle end is recorded independently");
+  assert.equal(effectiveStatus(state.current, 22040), "error", "the error pose is not cut short by the completion");
+  assert.equal(effectiveStatus(state.current, 21020 + ERROR_HOLD_MS), "error", "the four-second boundary still shows error");
+  assert.equal(effectiveStatus(state.current, 21020 + ERROR_HOLD_MS + 1), "idle", "after the hold the run is over");
+  assert.equal(state.current.lastRunEndedAt <= 21020 + ERROR_HOLD_MS, true);
+});
+
+test("a recovered successful run after the error hold can complete normally", () => {
+  let state = applyEvent(createSnapshot(), identity("session-recover002"), { type: "agent_start" }, 20000);
+  state = applyEvent(state, identity("session-recover002"), {
+    type: "tool_execution_end", isError: true,
+  }, 20010);
+  state = applyEvent(state, identity("session-recover002"), {
+    type: "tool_execution_start", toolName: "file.read",
+  }, 24020);
+  state = applyEvent(state, identity("session-recover002"), {
+    type: "tool_execution_end", isError: false,
+  }, 24030);
+  assert.equal(effectiveStatus(state.current, 24030), "success", "a successful tool after the hold is real recovery evidence");
+  state = applyEvent(state, identity("session-recover002"), { type: "agent_end" }, 24100);
+  assert.equal(state.current.status, "success");
+  assert.equal(state.current.lastRunEndedAt, 24100);
 });
 
 test("out-of-order and missing tool events stay conservative; terminal runs cannot be revived", () => {
@@ -921,5 +976,106 @@ test("restoring an App snapshot never revives stale work, feedback, or tool iden
   assert.equal(restored.current.toolName, null);
   assert.equal(restored.current.feedbackResumed, false);
   assert.equal(restored.current.runEnded, false);
+  assert.equal(restored.current.drawingAt, 0);
+  assert.equal(restored.current.lastRunEndedAt, 0);
   assert.equal(restored.selectedCharacterId, undefined);
+});
+
+test("a real error survives immediate tool and turn events for its hold", () => {
+  let state = applyEvent(createSnapshot(), identity("session-errhold"), { type: "agent_start" }, 60000);
+  state = applyEvent(state, identity("session-errhold"), { type: "tool_execution_start", toolName: "read_file" }, 60010);
+  state = applyEvent(state, identity("session-errhold"), { type: "tool_execution_end", isError: true }, 60020);
+  assert.equal(effectiveStatus(state.current, 60020), "error");
+  state = applyEvent(state, identity("session-errhold"), { type: "tool_execution_start", toolName: "write_file" }, 60030);
+  assert.equal(effectiveStatus(state.current, 60030), "error", "a new tool does not erase the held error");
+  assert.equal(state.current.toolName, "write_file");
+  state = applyEvent(state, identity("session-errhold"), { type: "tool_execution_end", isError: false }, 60040);
+  assert.equal(effectiveStatus(state.current, 60040), "error", "a successful follow-up tool does not erase the held error");
+  state = applyEvent(state, identity("session-errhold"), { type: "turn_start" }, 60050);
+  assert.equal(effectiveStatus(state.current, 60050), "error");
+  assert.equal(effectiveStatus(state.current, 60020 + ERROR_HOLD_MS + 1), "working",
+    "after the hold the real running state returns");
+});
+
+test("a drawing tool leaves a display-only marker without pretending it is running", () => {
+  let state = applyEvent(createSnapshot(), identity("session-draw001"), { type: "agent_start" }, 30000);
+  state = applyEvent(state, identity("session-draw001"), {
+    type: "tool_execution_start", toolName: "media_generate-image",
+  }, 30010);
+  assert.equal(state.current.drawingAt, 30010);
+  state = applyEvent(state, identity("session-draw001"), { type: "tool_execution_end", isError: false }, 30020);
+  assert.equal(state.current.drawingAt, 30010, "the marker survives the tool return");
+  assert.equal(state.current.running, true, "the marker is not a running flag");
+  assert.equal(effectiveStatus(state.current, 30020), "success", "the tool result is still short feedback");
+  state = applyEvent(state, identity("session-draw001"), {
+    type: "tool_execution_start", toolName: "read_file",
+  }, 30030);
+  assert.equal(state.current.drawingAt, 30010, "an ordinary follow-up tool does not clear the marker");
+  assert.equal(state.current.toolName, "read_file");
+  state = applyEvent(state, identity("session-draw001"), { type: "tool_execution_end", isError: false }, 30040);
+  state = applyEvent(state, identity("session-draw001"), {
+    type: "tool_execution_start", toolName: "image_gen_v2",
+  }, 30050);
+  assert.equal(state.current.drawingAt, 30050, "a new drawing call refreshes the marker");
+
+  assert.equal(isDrawingToolName("media_generate-image"), true);
+  assert.equal(isDrawingToolName("MCP__tools__IMAGE_GEN"), true);
+  assert.equal(isDrawingToolName("image_gen_v2"), true);
+  assert.equal(isDrawingToolName("media_resize-image"), false);
+  assert.equal(isDrawingToolName("read_file"), false);
+  assert.equal(isDrawingToolName(""), false);
+});
+
+test("only a non-retry, non-error run end records a completion notice", () => {
+  let state = applyEvent(createSnapshot(), identity("session-done001"), { type: "agent_start" }, 40000);
+  state = applyEvent(state, identity("session-done001"), { type: "tool_execution_end", isError: false }, 40010);
+  assert.equal(state.current.lastRunEndedAt, 0, "a tool success is not a whole-run completion");
+  state = applyEvent(state, identity("session-done001"), { type: "agent_end", willRetry: true }, 40020);
+  assert.equal(state.current.lastRunEndedAt, 0, "a retry is not completion");
+  state = applyEvent(state, identity("session-done001"), { type: "agent_end", willRetry: false }, 40030);
+  assert.equal(state.current.lastRunEndedAt, 40030);
+  assert.equal(state.current.status, "success");
+
+  state = applyEvent(state, identity("session-done001"), { type: "agent_start" }, 40040);
+  assert.equal(state.current.lastRunEndedAt, 0, "a new run supersedes the old completion notice");
+  state = applyEvent(state, identity("session-done001"), { type: "tool_execution_end", isError: true }, 40050);
+  state = applyEvent(state, identity("session-done001"), { type: "agent_end", willRetry: false }, 40060);
+  assert.equal(state.current.lastRunEndedAt, 0, "an errored run raises no completion notice");
+  assert.equal(state.current.status, "error");
+
+  state = applyEvent(state, identity("session-done001"), { type: "session_closed" }, 40070);
+  assert.equal(state.current.lastRunEndedAt, 0, "a closed session cannot complete");
+});
+
+test("concurrent work counts only real, live running sessions", () => {
+  let state = createSnapshot();
+  assert.equal(concurrentWorkCount(state.sessions, 50000), 0);
+  state = applyEvent(state, identity("session-conc-a"), { type: "agent_start" }, 50000);
+  assert.equal(concurrentWorkCount(state.sessions, 50000), 1);
+  state = applyEvent(state, identity("session-conc-b"), { type: "agent_start" }, 50001);
+  state = applyEvent(state, identity("session-conc-c"), { type: "agent_start" }, 50002);
+  assert.equal(concurrentWorkCount(state.sessions, 50002), 3);
+  state = applyEvent(state, identity("session-conc-a"), { type: "agent_end" }, 50003);
+  assert.equal(concurrentWorkCount(state.sessions, 50003), 2, "a finished run no longer counts");
+  state = applyEvent(state, identity("session-conc-b"), { type: "session_closed" }, 50004);
+  assert.equal(concurrentWorkCount(state.sessions, 50004), 1, "a closed session no longer counts");
+
+  const placeholder = unresolvedKeyFor("/private/concurrent/path");
+  state = applyEvent(state, { sessionId: placeholder }, { type: "agent_start" }, 50005);
+  assert.equal(state.sessions.some((item) => item.sessionId === placeholder), true);
+  assert.equal(concurrentWorkCount(state.sessions, 50005), 1, "a placeholder is never counted");
+  assert.equal(concurrentWorkCount(state.sessions, 50002 + RUNNING_STALE_MS + 1), 0,
+    "a stale running flag expires");
+
+  const idle = applyEvent(createSnapshot(), identity("session-conc-idle"), { type: "session_created" }, 50010);
+  assert.equal(concurrentWorkCount(idle.sessions, 50010), 0, "an idle row is not work");
+});
+
+test("notice ids are stable, opaque and bounded", () => {
+  const first = noticeIdFor("confirmation", "session-abc", 1234);
+  assert.equal(first, noticeIdFor("confirmation", "session-abc", 1234));
+  assert.match(first, /^confirmation:[0-9a-f]{8}:1234$/);
+  assert.equal(first.includes("session-abc"), false, "the raw session id never rides in a notice id");
+  assert.notEqual(noticeIdFor("completion", "session-abc", 1234), first);
+  assert.notEqual(noticeIdFor("confirmation", "session-abd", 1234), first);
 });

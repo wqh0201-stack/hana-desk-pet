@@ -159,25 +159,32 @@ export function createHarness({
     network: {
       fetch: async (url, init) => {
         const path = new URL(url).pathname;
-        if (path === "/v3/hello") {
+        if (path === "/v4/hello") {
           return { ok: true, status: 200, url, redirected: false,
-            json: async () => ({ service: "hana-desktop-pet", protocolVersion: 3 }) };
+            json: async () => ({ service: "hana-desktop-pet", protocolVersion: 4 }) };
         }
-        if (path === "/v3/snapshot") {
+        if (path === "/v4/snapshot") {
           state.published.push(clone(JSON.parse(init.body)));
           return { ok: true, status: 200, url, redirected: false,
-            json: async () => ({ schemaVersion: 3, accepted: true }) };
+            json: async () => ({ schemaVersion: 4, accepted: true }) };
         }
-        if (path === "/v3/selection") {
+        if (path === "/v4/state") {
+          return { ok: true, status: 200, url, redirected: false,
+            json: async () => ({
+              schemaVersion: 4, characterId: "claude", pose: "idle",
+              fallback: false, since: 0, revision: 0,
+            }) };
+        }
+        if (path === "/v4/selection") {
           if (init?.method === "POST") {
             const body = JSON.parse(init.body);
             return { ok: true, status: 200, url, redirected: false,
               json: async () => ({
-                schemaVersion: 3, characterId: body.characterId, revision: 2, updatedAt: body.updatedAt,
+                schemaVersion: 4, characterId: body.characterId, revision: 2, updatedAt: body.updatedAt,
               }) };
           }
           return { ok: true, status: 200, url, redirected: false,
-            json: async () => ({ schemaVersion: 3, characterId: "claude", revision: 0, updatedAt: 0 }) };
+            json: async () => ({ schemaVersion: 4, characterId: "claude", revision: 0, updatedAt: 0 }) };
         }
         throw makeError("PET_ROUTE_NOT_ALLOWED");
       },

@@ -7,7 +7,13 @@ PACKAGE_DIR="$PROJECT_ROOT/pet-macos"
 INFO_PLIST="$PACKAGE_DIR/Resources/Info.plist"
 DIST_DIR="$PROJECT_ROOT/dist"
 APP_NAME="HanaDesktopPet"
-APP_BUNDLE_NAME="$APP_NAME-crosspet-v0.5.8-local"
+# Single source of truth for the local acceptance bundle version.
+APP_VERSION=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$INFO_PLIST" 2>/dev/null || true)
+if [ -z "$APP_VERSION" ]; then
+  echo "Could not read CFBundleShortVersionString from $INFO_PLIST" >&2
+  exit 1
+fi
+APP_BUNDLE_NAME="$APP_NAME-crosspet-v$APP_VERSION-local"
 APP_BUNDLE="$DIST_DIR/$APP_BUNDLE_NAME.app"
 ICON_FILE="$PACKAGE_DIR/Resources/AppIcon.icns"
 
@@ -119,6 +125,7 @@ fi
 trap - EXIT HUP INT TERM
 
 printf 'Created locally ad-hoc-signed app bundle: %s\n' "$APP_BUNDLE"
+printf 'Bundle version: %s\n' "$APP_VERSION"
 printf 'Bundle identifier: %s\n' "com.hanaagent.prototype.hana-desktop-pet"
 printf 'Bundle icon: %s\n' "AppIcon.icns"
 printf 'Bundled character poses: %s\n' "$POSE_COUNT"

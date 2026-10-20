@@ -25,8 +25,21 @@ private struct PosePlannerChecks {
         ]
         for (hint, expected) in hintPoses {
             expect(PetPosePlanner.preferredPose(for: .working, toolName: nil, hint: hint) == expected, "\(hint.rawValue) maps to \(expected)")
-            expect(PetPosePlanner.preferredPose(for: .error, toolName: nil, hint: hint) == "oops", "error short feedback outranks \(hint.rawValue)")
+            let errorExpected = hint == .confirming ? "asking" : "oops"
+            expect(PetPosePlanner.preferredPose(for: .error, toolName: nil, hint: hint) == errorExpected,
+                   "error \(hint == .confirming ? "yields to a pending confirmation" : "outranks \(hint.rawValue)")")
         }
+        expect(PetPosePlanner.isSemanticToolName("read_file") &&
+               PetPosePlanner.isSemanticToolName("write_file") &&
+               PetPosePlanner.isSemanticToolName("web_search") &&
+               PetPosePlanner.isSemanticToolName("run_command") &&
+               PetPosePlanner.isSemanticToolName("spawn_agent") &&
+               PetPosePlanner.isSemanticToolName("generate_image"),
+               "semantic tool actions are recognised")
+        expect(!PetPosePlanner.isSemanticToolName(nil) &&
+               !PetPosePlanner.isSemanticToolName("unknown_tool") &&
+               !PetPosePlanner.isSemanticToolName("not_read_file_backup"),
+               "generic and unknown tools are not semantic actions")
     }
 
     private static func checkToolNameClassification() throws {
@@ -250,6 +263,29 @@ private struct PosePlannerChecks {
         expect(PetPosePlanner.workThinkingVariant(for: "claude") == "thinking-2" &&
                PetPosePlanner.workThinkingVariant(for: "deepseek") == "deepthink",
                "variant mapping is per character and never cross-character")
+
+        // The unbound-concurrency rhythm swaps only the thinking stages for swamped art.
+        for role in PetRole.builtIns {
+            let poses = catalog.poseNames(forCharacterID: role.id)
+            guard let swamped = PetPosePlanner.swampedWorkPoseSet(characterID: role.id, availablePoseNames: poses) else {
+                fatalError("CHECK FAILED: \(role.id) has no swamped work candidates")
+            }
+            let phases = PetWorkPoseScheduler.phases(for: swamped)
+            expect(phases.count == 2, "\(role.id) swamped rhythm is a calm two-pose alternation")
+            expect(phases.map(\.pose).contains("swamped_left") && phases.map(\.pose).contains("swamped_right"),
+                   "\(role.id) swamped rhythm uses the existing swamped artwork")
+            expect(phases.allSatisfy { poses.contains($0.pose) }, "\(role.id) swamped rhythm stays inside its catalog")
+            expect(phases.allSatisfy { $0.pose != "reading" && $0.pose != "writing" && $0.pose != "drawing" },
+                   "\(role.id) swamped rhythm never borrows a semantic tool pose")
+        }
+        let noSwampedArt = PetPosePlanner.swampedWorkPoseSet(
+            characterID: "claude",
+            availablePoseNames: ["idle", "thinking", "thinking-2", "busy_left", "busy_right"]
+        )
+        expect(noSwampedArt?.thinking == "busy_left" && noSwampedArt?.thinkingVariant == "busy_right",
+               "a catalog without swamped art falls back to the existing busy poses")
+        expect(PetPosePlanner.swampedWorkPoseSet(characterID: "claude", availablePoseNames: ["idle"]) == nil,
+               "a one-pose catalog has no swamped rhythm")
     }
 
     private static func expect(_ condition: @autoclosure () -> Bool, _ message: String) {

@@ -105,7 +105,7 @@ function bridge(status, poseState) {
 }
 
 const pose = (characterId, pose, fallback = false) => ({
-  schemaVersion: 3, characterId, pose, fallback, since: now - 12000, revision: 42,
+  schemaVersion: 4, characterId, pose, fallback, since: now - 12000, revision: 42,
 });
 
 const fixtures = {

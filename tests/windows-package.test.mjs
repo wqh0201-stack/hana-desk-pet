@@ -56,7 +56,8 @@ test('Windows single-file sources and build entries exist at the repository layo
     assert.ok(!fs.existsSync(path.join(source, retired)), `retired first-start file is back: ${retired}`);
   }
   const version = JSON.parse(fs.readFileSync(path.join(source, 'version.json'), 'utf8'));
-  assert.equal(version.version, '0.2.0');
+  assert.equal(version.version, '0.3.0');
+  assert.equal(version.protocolVersion, 4);
   assert.equal(version.distribution, 'single-file-portable');
   for (const tool of ['build-windows-portable.py', 'run-windows-checks.py']) {
     assert.ok(fs.existsSync(path.join(ROOT, 'tools', tool)), `missing Windows build entry: ${tool}`);

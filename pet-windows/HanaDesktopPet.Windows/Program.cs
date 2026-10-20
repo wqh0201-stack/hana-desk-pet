@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Reflection;
 using System.Threading;
@@ -58,8 +59,8 @@ namespace HanaDesktopPet.Windows
         {
             try
             {
-                PetArtworkCatalog catalog = new PetArtworkCatalog(
-                    new EmbeddedPetAssetStore(Assembly.GetExecutingAssembly()));
+                EmbeddedPetAssetStore store = new EmbeddedPetAssetStore(Assembly.GetExecutingAssembly());
+                PetArtworkCatalog catalog = new PetArtworkCatalog(store);
                 int decoded = 0;
                 for (int roleIndex = 0; roleIndex < PetRole.BuiltIns.Count; roleIndex++)
                 {
@@ -77,7 +78,43 @@ namespace HanaDesktopPet.Windows
                 }
                 if (PetRole.BuiltIns.Count != 7 || decoded != 211)
                     throw new InvalidDataException("Expected 7 built-in roles and 211 PNG images; decoded " + decoded + ".");
-                TryWriteOutput("Assets OK: 7 characters, 211 PNG images decoded.");
+
+                // The subtitle table is a native resource too. A table that fails to parse would
+                // silently degrade to notices-only, so the check has to read it, not just look
+                // for it in the index.
+                PetSubtitleCatalog subtitles = PetSubtitleCatalog.Parse(store.ReadAllBytes("pet-lines.json"));
+                string[] roles = subtitles.Roles;
+                string[] states = subtitles.StateOrder;
+                if (roles.Length != PetRole.BuiltIns.Count)
+                    throw new InvalidDataException("Expected " + PetRole.BuiltIns.Count +
+                        " subtitle roles; found " + roles.Length + ".");
+                for (int roleIndex = 0; roleIndex < roles.Length; roleIndex++)
+                {
+                    if (!String.Equals(roles[roleIndex], PetRole.BuiltIns[roleIndex].Id, StringComparison.Ordinal))
+                        throw new InvalidDataException("Subtitle role order does not match the built-in roles: " +
+                            roles[roleIndex] + ".");
+                }
+                if (states.Length != 20)
+                    throw new InvalidDataException("Expected 20 subtitle states; found " + states.Length + ".");
+                int subtitleLines = 0;
+                for (int roleIndex = 0; roleIndex < roles.Length; roleIndex++)
+                {
+                    for (int stateIndex = 0; stateIndex < states.Length; stateIndex++)
+                    {
+                        string[] wording = subtitles.Lines(roles[roleIndex], states[stateIndex]);
+                        if (wording == null || wording.Length != 2)
+                            throw new InvalidDataException("Subtitle table needs two lines for " +
+                                roles[roleIndex] + "/" + states[stateIndex] + ".");
+                        subtitleLines += wording.Length;
+                    }
+                }
+                int expectedLines = roles.Length * states.Length * 2;
+                if (subtitleLines != expectedLines)
+                    throw new InvalidDataException("Expected " + expectedLines + " subtitle lines; parsed " +
+                        subtitleLines + ".");
+
+                TryWriteOutput("Assets OK: 7 characters, 211 PNG images decoded, " + subtitleLines +
+                    " subtitle lines parsed.");
                 return 0;
             }
             catch (Exception ex)
@@ -132,6 +169,18 @@ namespace HanaDesktopPet.Windows
             {
                 return catalog.AvailablePoses(characterId);
             });
+            // The status subtitle table is a bundled native resource; a missing or malformed
+            // table degrades to notices only instead of blocking the pet.
+            try
+            {
+                PetSubtitleCatalog subtitleCatalog = PetSubtitleCatalog.Parse(
+                    new EmbeddedPetAssetStore(Assembly.GetExecutingAssembly()).ReadAllBytes("pet-lines.json"));
+                animator.AttachSubtitleCatalog(subtitleCatalog, 0x68616E6170657421UL);
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine("Hana Desktop Pet subtitle table unavailable: " + ex.GetType().Name);
+            }
             PetWindow window = new PetWindow(store, poseReadback, animator, catalog, preferences, saved);
             LocalHttpServer server = new LocalHttpServer(store, poseReadback);
             server.StateChanged += window.OnServerStateChanged;

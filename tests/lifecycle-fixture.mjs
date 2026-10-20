@@ -9,7 +9,7 @@
 // appear in a projection. This is synthetic data only: it never contacts a real
 // Hana host or the fixed 127.0.0.1:43127 pet service.
 
-import { applyEvent, createSnapshot } from "../apps/hana-desktop-pet/state-core.mjs";
+import { applyEvent, applyHintEvent, createSnapshot } from "../apps/hana-desktop-pet/state-core.mjs";
 import { toPetSnapshot } from "../apps/hana-desktop-pet/pet-bridge.mjs";
 
 export const LIFECYCLE_PRIVATE_SENTINELS = Object.freeze([
@@ -42,13 +42,13 @@ const SEQUENCE = [
   { label: "write_tool_start", at: 4100, event: ["tool_execution_start", { toolName: "functions.write" }], status: "tool", toolName: "functions.write", pose: "writing" },
   { label: "write_tool_error", at: 4200, event: ["tool_execution_end", { toolName: "functions.write", isError: true }], status: "error", toolName: null, pose: "oops" },
   { label: "error_feedback_survives_next_turn", at: 4300, event: ["turn_start", {}], status: "error", toolName: null, pose: "oops" },
-  { label: "error_feedback_expires_to_work", at: 7000, event: null, status: "working", toolName: null, pose: "thinking" },
-  { label: "agent_end_will_retry", at: 7100, event: ["agent_end", { willRetry: true }], status: "working", toolName: null, pose: "thinking" },
-  { label: "auto_retry_start", at: 7200, event: ["auto_retry_start", {}], status: "working", toolName: null, pose: "thinking" },
-  { label: "auto_retry_end_is_not_completion", at: 7300, event: ["auto_retry_end", {}], status: "working", toolName: null, pose: "thinking" },
-  { label: "whole_run_end", at: 7400, event: ["agent_end", { willRetry: false }], status: "success", toolName: null, pose: "happy" },
-  { label: "outcome_still_recent", at: 8000, event: null, status: "success", toolName: null, pose: "happy" },
-  { label: "outcome_expires_to_idle", at: 11000, event: null, status: "idle", toolName: null, pose: "idle" },
+  { label: "error_feedback_expires_to_work", at: 8300, event: null, status: "working", toolName: null, pose: "thinking" },
+  { label: "agent_end_will_retry", at: 8400, event: ["agent_end", { willRetry: true }], status: "working", toolName: null, pose: "thinking" },
+  { label: "auto_retry_start", at: 8500, event: ["auto_retry_start", {}], status: "working", toolName: null, pose: "thinking" },
+  { label: "auto_retry_end_is_not_completion", at: 8600, event: ["auto_retry_end", {}], status: "working", toolName: null, pose: "thinking" },
+  { label: "whole_run_end", at: 8700, event: ["agent_end", { willRetry: false }], status: "success", toolName: null, pose: "happy" },
+  { label: "outcome_still_recent", at: 9500, event: null, status: "success", toolName: null, pose: "happy" },
+  { label: "outcome_expires_to_idle", at: 12000, event: null, status: "idle", toolName: null, pose: "idle" },
 ];
 
 export const LIFECYCLE_EXPECTATIONS = Object.freeze(SEQUENCE.map((step) => Object.freeze({
@@ -90,6 +90,39 @@ export function buildLifecycleFixture() {
     privateSentinels: LIFECYCLE_PRIVATE_SENTINELS,
     steps: buildLifecycleSteps(),
     concurrentSteps: buildConcurrentSteps(),
+    v4Step: buildV4MetadataStep(),
+  };
+}
+
+/**
+ * A full v4 snapshot that really carries every new field: a pinned follow mode, a
+ * running session, a drawing spotlight and a pending confirmation. This is the
+ * cross-layer proof that the new fields are parsed, not just defaulted.
+ */
+function buildV4MetadataStep() {
+  let snapshot = applyEvent(createSnapshot(), IDENTITY, { type: "agent_start" }, 20000);
+  snapshot = applyEvent(snapshot, IDENTITY, {
+    type: "tool_execution_start", toolName: "image_gen",
+  }, 20010);
+  snapshot = applyHintEvent(snapshot, { sessionId: IDENTITY.sessionId }, {
+    type: "session_confirmation",
+  }, 20020);
+  const at = 20030;
+  return {
+    label: "v4_full_metadata",
+    at,
+    expectation: {
+      followMode: "pinned",
+      concurrentSessions: 1,
+      notificationKinds: ["confirmation"],
+      spotlight: "drawing",
+      hint: "confirming",
+      status: "tool",
+    },
+    dto: toPetSnapshot(snapshot, at, {
+      followMode: "pinned",
+      pinnedSessionId: IDENTITY.sessionId,
+    }),
   };
 }
 

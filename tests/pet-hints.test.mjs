@@ -117,9 +117,9 @@ function currentHint(harness) {
   return toPetSnapshot(harness.read(SNAPSHOT_KEY), harness.now()).activity.hint;
 }
 
-test("the wire contract is version 3 with exactly one new optional field", () => {
-  assert.equal(PET_SCHEMA_VERSION, 3);
-  assert.equal(PET_PROTOCOL_VERSION, 3);
+test("the wire contract is version 4 with exactly one new optional field", () => {
+  assert.equal(PET_SCHEMA_VERSION, 4);
+  assert.equal(PET_PROTOCOL_VERSION, 4);
   assert.deepEqual([...PET_HINTS], ["confirming", "compacting", "interrupted"],
     "the frozen hint enum must not drift from the native side");
 });
@@ -312,11 +312,11 @@ test("the hint reaches the pet DTO and nowhere else", async () => {
 
   assert.ok(harness.state.published.length > beforeCount, "a snapshot was published after the hint");
   const latest = harness.state.published[harness.state.published.length - 1];
-  assert.deepEqual(Object.keys(latest).sort(), ["activity", "characters", "revision", "schemaVersion"]);
+  assert.deepEqual(Object.keys(latest).sort(), ["activity", "characters", "concurrentSessions", "followMode", "notifications", "revision", "schemaVersion"]);
   assert.deepEqual(Object.keys(latest.activity).sort(),
-    ["agentId", "agentName", "hint", "lastActivityAt", "sessionId", "status", "title", "toolName"],
+    ["agentId", "agentName", "hint", "lastActivityAt", "sessionId", "spotlight", "status", "title", "toolName"],
     "exactly one field was added, and only that one");
-  assert.equal(latest.schemaVersion, 3);
+  assert.equal(latest.schemaVersion, 4);
   assert.equal(latest.activity.hint, "confirming");
   assert.equal(latest.activity.sessionId, SEEN);
   assertNoSecret(latest, "published dto");

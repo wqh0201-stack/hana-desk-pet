@@ -36,8 +36,7 @@ export function verifyWindowsAssets(preparedRoot = path.join(ROOT, '.build/windo
   const sourceBytes = read(path.join(sourceRoot, 'catalog.json'));
   const source = JSON.parse(sourceBytes);
   const catalog = json(path.join(artworkRoot, 'catalog.json'));
-  const manifest = json(path.join(artworkRoot, 'build-manifest.json'));
-  if (manifest.schemaVersion !== 1 || manifest.sourceCatalogSHA256 !== hash(sourceBytes)) throw new Error('Prepared assets have a stale source catalog');
+  const manifest = json(path.join(artworkRoot, 'build-manifest.json'));  if (manifest.schemaVersion !== 1 || manifest.sourceCatalogSHA256 !== hash(sourceBytes)) throw new Error('Prepared assets have a stale source catalog');
   if (!read(path.join(artworkRoot, 'source-catalog.json')).equals(sourceBytes)) throw new Error('Source catalog copy changed');
   if (source.schemaVersion !== 1 || catalog.schemaVersion !== 1 || JSON.stringify(source.characters.map(item => item.id)) !== JSON.stringify(ROLES) || JSON.stringify(catalog.characters.map(item => item.id)) !== JSON.stringify(ROLES)) throw new Error('Unexpected character catalog');
   const records = new Map();
@@ -47,7 +46,7 @@ export function verifyWindowsAssets(preparedRoot = path.join(ROOT, '.build/windo
     records.set(item.source, item);
   }
   let poseCount = 0, generatedCount = 0;
-  const expected = new Set(['catalog.json', 'source-catalog.json', 'build-manifest.json', 'WINDOWS-ASSETS.md', 'CHARACTERS-LICENSE.md', 'ATTRIBUTION.md']);
+  const expected = new Set(['catalog.json', 'source-catalog.json', 'build-manifest.json', 'WINDOWS-ASSETS.md', 'CHARACTERS-LICENSE.md', 'ATTRIBUTION.md', 'pet-lines.json']);
   for (const [index, character] of source.characters.entries()) {
     if (character.assetDirectory !== character.id || !character.poseFiles.includes('idle.webp') || new Set(character.poseFiles).size !== character.poseFiles.length || character.poseFiles.some(file => !POSE.test(file))) throw new Error('Invalid source character');
     const counterpart = catalog.characters[index];
@@ -69,8 +68,8 @@ export function verifyWindowsAssets(preparedRoot = path.join(ROOT, '.build/windo
     }
   }
   if (records.size !== poseCount || manifest.poseCount !== poseCount || manifest.generatedCount !== generatedCount || manifest.upstreamCount !== poseCount - generatedCount) throw new Error('Conversion counts differ');
-  for (const file of ['CHARACTERS-LICENSE.md', 'ATTRIBUTION.md']) {
-    if (!read(path.join(sourceRoot, file)).equals(read(path.join(artworkRoot, file)))) throw new Error(`License or attribution changed: ${file}`);
+  for (const file of ['CHARACTERS-LICENSE.md', 'ATTRIBUTION.md', 'pet-lines.json']) {
+    if (!read(path.join(sourceRoot, file)).equals(read(path.join(artworkRoot, file)))) throw new Error(`License, attribution or subtitle table changed: ${file}`);
   }
   const actual = walk(artworkRoot).map(file => file.relative);
   if (actual.length !== expected.size || actual.some(file => !expected.has(file))) throw new Error('Unexpected artwork file outside catalog');

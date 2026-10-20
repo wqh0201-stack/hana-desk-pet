@@ -81,13 +81,16 @@ private struct PoseLifecycleChecks {
             }
             let table = expected[index]
 
-            expect(Set(dto.keys) == ["schemaVersion", "revision", "characters", "activity"], "\(label) root keys are exactly the strict v3 set")
+            expect(Set(dto.keys) == [
+                "schemaVersion", "revision", "characters", "activity",
+                "followMode", "concurrentSessions", "notifications",
+            ], "\(label) root keys are exactly the strict v4 set")
             let requiredActivityKeys: Set<String> = ["sessionId", "title", "agentId", "agentName", "status", "toolName", "lastActivityAt"]
-            let allowedActivityKeys = requiredActivityKeys.union(["hint"])
+            let allowedActivityKeys = requiredActivityKeys.union(["hint", "spotlight"])
             let activityKeys = Set((dto["activity"] as? [String: Any])?.keys ?? Dictionary<String, Any>().keys)
             expect(requiredActivityKeys.isSubset(of: activityKeys) && activityKeys.isSubset(of: allowedActivityKeys),
-                   "\(label) activity keys use the strict v3 allowlist with optional hint")
-            expect(api.handle(jsonRequest("POST", "/v3/snapshot", dto)).statusCode == 200, "\(label) is accepted by the strict native v3 parser")
+                   "\(label) activity keys use the strict v4 allowlist with optional hint and spotlight")
+            expect(api.handle(jsonRequest("POST", "/v4/snapshot", dto)).statusCode == 200, "\(label) is accepted by the strict native v4 parser")
 
             let state = store.viewState()
             expect(state.activity.status == table.status, "\(label) projects native status \(table.status.rawValue)")
@@ -140,7 +143,54 @@ private struct PoseLifecycleChecks {
 
         print("PoseLifecycleChecks: \(checks) cross-layer checks passed (claude layout \(Int(layout.windowSize.width))x\(Int(layout.windowSize.height)) pt, maxAspect \(catalog.maximumAspectRatio))")
         try checkConcurrentFollowIntoWorkScheduler(catalog: catalog, fixture: fixture)
+        try checkV4MetadataStep(fixture: fixture, sentinels: sentinels)
         print("PoseLifecycleChecks: \(checks) cross-layer checks passed including synthetic concurrent follow")
+    }
+
+    /// A full v4 snapshot with every new field present must be parsed, projected and
+    /// still resolve the highest-priority pose (the pending confirmation).
+    private static func checkV4MetadataStep(fixture: [String: Any], sentinels: [String]) throws {
+        guard let step = fixture["v4Step"] as? [String: Any],
+              let dto = step["dto"] as? [String: Any],
+              let expectation = step["expectation"] as? [String: Any] else {
+            fatalError("CHECK FAILED: the v4 metadata fixture is missing")
+        }
+        expect(Set(dto.keys) == [
+            "schemaVersion", "revision", "characters", "activity",
+            "followMode", "concurrentSessions", "notifications",
+        ], "the v4 step carries exactly the full v4 root set")
+        expect((dto["activity"] as? [String: Any])?["spotlight"] != nil,
+               "the v4 step carries a real spotlight")
+        expect(((dto["notifications"] as? [Any])?.count ?? 0) == 1,
+               "the v4 step carries a real notification")
+
+        let store = PetStateStore()
+        let api = PetAPI(store: store)
+        expect(api.handle(jsonRequest("POST", "/v4/snapshot", dto)).statusCode == 200,
+               "the full v4 snapshot is accepted by the strict native parser")
+        let state = store.viewState()
+        expect(state.followMode.rawValue == expectation["followMode"] as? String,
+               "the pinned follow mode is parsed, not defaulted")
+        expect(state.concurrentSessions == expectation["concurrentSessions"] as? Int,
+               "the bounded concurrency count is parsed, not defaulted")
+        expect(state.notifications.count == 1 && state.notifications[0].kind == .confirmation,
+               "the confirmation notice is parsed, not defaulted")
+        expect(state.activity.spotlight?.kind == expectation["spotlight"] as? String,
+               "the drawing spotlight is parsed, not defaulted")
+        expect(state.activity.hint?.rawValue == expectation["hint"] as? String,
+               "the confirming hint survives the full v4 payload")
+        expect(state.activity.status.rawValue == expectation["status"] as? String,
+               "the tool status survives the full v4 payload")
+        expect(PetPosePlanner.preferredPose(
+            for: state.activity.status,
+            toolName: state.activity.toolName,
+            hint: state.activity.hint
+        ) == "asking", "the pending confirmation still owns the pose")
+
+        let serialized = String(data: try JSONSerialization.data(withJSONObject: dto), encoding: .utf8) ?? ""
+        for sentinel in sentinels {
+            expect(!serialized.contains(sentinel), "the full v4 snapshot never carries \(sentinel)")
+        }
     }
 
     /// Replays the synthetic concurrent-follow steps through the real native path and then
@@ -169,9 +219,9 @@ private struct PoseLifecycleChecks {
                   let expectedOwner = expectation["current"] as? String else {
                 fatalError("CHECK FAILED: \(label) carries no DTO or expectation")
             }
-            expect(api.handle(jsonRequest("POST", "/v3/snapshot", dto)).statusCode == 200 ||
+            expect(api.handle(jsonRequest("POST", "/v4/snapshot", dto)).statusCode == 200 ||
                    store.viewState().activity.sessionId == expectedOwner,
-                   "\(label) is accepted by the strict v3 parser")
+                   "\(label) is accepted by the strict v4 parser")
 
             let state = store.viewState()
             expect(state.activity.sessionId == expectedOwner,

@@ -47,7 +47,20 @@ const HINT_CLEAR = new Map([
   ["compaction_end", "compacting"],
 ]);
 export const HINT_EVENT_TYPES = Object.freeze([...HINT_RAISE.keys(), ...HINT_CLEAR.keys()]);
+/** A tool result is a brief success overlay; it never claims the whole run succeeded. */
 export const OUTCOME_HOLD_MS = 2500;
+/** A real tool error stays visible longer and survives ordinary follow-up work events. */
+export const ERROR_HOLD_MS = 4000;
+/** How long a drawing tool keeps the drawing pose after its call has already returned. */
+export const DRAWING_HOLD_MS = 4000;
+/** The console keeps re-sending a fresh drawing marker for this long; the pet owns the 4 s hold. */
+export const DRAWING_SPOTLIGHT_TTL_MS = 30000;
+/** A finished turn stays eligible for a completion bubble for this long. */
+export const COMPLETION_NOTICE_TTL_MS = 20000;
+/** A running record with no event for this long no longer counts as concurrent work. */
+export const RUNNING_STALE_MS = 30 * 60 * 1000;
+export const MAX_NOTICE_CONFIRMATIONS = 4;
+export const MAX_NOTICE_COMPLETIONS = 4;
 export const MAX_SESSIONS = 32;
 export const SESSION_LIST_MAX = 64;
 /** Active sessions get their own budget so truncation can never drop one. */
@@ -140,6 +153,43 @@ export function unresolvedKeyFor(sessionPath) {
   return `${UNRESOLVED_PREFIX}${hashKey(sessionPath)}`;
 }
 
+/**
+ * A stable, opaque id for one presentation event. The session id is hashed, so a
+ * notification id never becomes a second place where a raw session id is stored.
+ * The native side dedupes by this id and never invents one of its own.
+ */
+export function noticeIdFor(kind, sessionId, at) {
+  const safeKind = kind === "completion" ? "completion" : "confirmation";
+  const safeAt = Number.isFinite(at) ? Math.max(0, Math.floor(at)) : 0;
+  return `${safeKind}:${hashKey(sessionId)}:${safeAt}`;
+}
+
+/** The drawing tool whitelist shared with both native planners (leaf names only). */
+export const DRAWING_TOOL_LEAVES = Object.freeze([
+  "image_gen", "image_generation", "generate_image", "create_image", "draw_image",
+  "text_to_image", "media_generate-image",
+]);
+const DRAWING_TOOL_LEAF_SET = new Set(DRAWING_TOOL_LEAVES);
+
+/**
+ * Whether a public tool name identifies image generation. This mirrors the native
+ * leaf-name rules closely enough for the display marker: namespace prefixes and a
+ * trailing version number are ignored, and only exact leaf names match.
+ */
+export function isDrawingToolName(value) {
+  if (typeof value !== "string") return false;
+  const lowered = value.trim().toLowerCase();
+  if (!lowered || lowered.length > 80) return false;
+  if (!/^[a-z0-9_.:/-]+$/.test(lowered)) return false;
+  const parts = lowered.replace(/::/g, ".").split(/[.:/]+/).filter(Boolean);
+  if (parts.length === 0) return false;
+  const components = parts[parts.length - 1].split("__").filter(Boolean);
+  let leaf = components[components.length - 1] ?? "";
+  const versioned = leaf.match(/^(.*?)[_-]v?\d+$/);
+  if (versioned && versioned[1]) leaf = versioned[1];
+  return DRAWING_TOOL_LEAF_SET.has(leaf);
+}
+
 export function isUnresolvedSessionId(sessionId) {
   return typeof sessionId === "string" && sessionId.startsWith(UNRESOLVED_PREFIX);
 }
@@ -179,8 +229,10 @@ export function effectiveHint(session, now = Date.now()) {
 export function effectiveStatus(session, now = Date.now()) {
   if (!session) return "idle";
   const age = now - session.statusAt;
-  if ((session.status === "success" || session.status === "error") &&
-      Number.isFinite(session.statusAt) && age >= 0 && age <= OUTCOME_HOLD_MS) {
+  const hold = session.status === "error" ? ERROR_HOLD_MS
+    : session.status === "success" ? OUTCOME_HOLD_MS
+      : 0;
+  if (hold > 0 && Number.isFinite(session.statusAt) && age >= 0 && age <= hold) {
     // Short tool feedback temporarily overlays the real underlying activity.
     return session.status;
   }
@@ -205,6 +257,19 @@ function cleanSession(session) {
     toolName: cleanText(session.toolName, 80),
     feedbackResumed: session.feedbackResumed === true,
     runEnded: session.runEnded === true,
+    // Display-only markers. They never make an idle session look like it is running.
+    drawingAt: Number.isFinite(session.drawingAt) && session.drawingAt > 0 ? session.drawingAt : 0,
+    lastRunEndedAt: Number.isFinite(session.lastRunEndedAt) && session.lastRunEndedAt > 0
+      ? session.lastRunEndedAt
+      : 0,
+    // Last observed tool outcomes. They decide whether a run ended in error even when
+    // the error pose is still inside its display hold.
+    lastToolErrorAt: Number.isFinite(session.lastToolErrorAt) && session.lastToolErrorAt > 0
+      ? session.lastToolErrorAt
+      : 0,
+    lastToolSuccessAt: Number.isFinite(session.lastToolSuccessAt) && session.lastToolSuccessAt > 0
+      ? session.lastToolSuccessAt
+      : 0,
     // Derived from the id so a placeholder can never masquerade as a real session.
     unresolved: isUnresolvedSessionId(sessionId),
     hint: PET_HINTS.includes(session.hint) ? session.hint : null,
@@ -230,6 +295,27 @@ export function isClosedSession(record) {
   if (closedAt <= 0) return false;
   const lastActivityAt = Number.isFinite(record.lastActivityAt) ? record.lastActivityAt : 0;
   return closedAt >= lastActivityAt;
+}
+
+/**
+ * Count conversations that are provably still working. Placeholders, closed rows,
+ * rows whose run already ended, idle rows and records with no event for the stale
+ * window are excluded, so a dead `running` flag cannot inflate the count forever.
+ */
+export function concurrentWorkCount(sessions, now = Date.now()) {
+  if (!Array.isArray(sessions)) return 0;
+  let count = 0;
+  for (const record of sessions) {
+    if (!record || typeof record !== "object") continue;
+    if (record.unresolved === true || isPlaceholderSessionId(record.sessionId)) continue;
+    if (record.running !== true || record.runEnded === true) continue;
+    if (isClosedSession(record)) continue;
+    const lastActivityAt = Number.isFinite(record.lastActivityAt) ? record.lastActivityAt : 0;
+    if (lastActivityAt <= 0 || now - lastActivityAt > RUNNING_STALE_MS) continue;
+    if (effectiveStatus(record, now) === "idle") continue;
+    count += 1;
+  }
+  return Math.min(count, MAX_SESSIONS);
 }
 
 function activityOrder(a, b) {
@@ -311,6 +397,10 @@ function seedSession(entry) {
     toolName: null,
     feedbackResumed: false,
     runEnded: false,
+    drawingAt: 0,
+    lastRunEndedAt: 0,
+    lastToolErrorAt: 0,
+    lastToolSuccessAt: 0,
     closedAt: 0,
     lastActivityAt: 0,
     statusAt: 0,
@@ -409,6 +499,8 @@ export function recoverSnapshot(value) {
       toolName: null,
       feedbackResumed: false,
       runEnded: false,
+      drawingAt: 0,
+      lastRunEndedAt: 0,
       hint: null,
       hintAt: 0,
     };
@@ -422,16 +514,25 @@ export function recoverSnapshot(value) {
 
 function isRecentFeedback(record, at) {
   const age = at - record.statusAt;
-  return (record.status === "success" || record.status === "error") &&
+  return record.status === "success" &&
     Number.isFinite(record.statusAt) && age >= 0 && age <= OUTCOME_HOLD_MS;
 }
 
-function beginWork(record, at, { preserveRecentFeedback = false } = {}) {
-  const keepFeedback = preserveRecentFeedback && isRecentFeedback(record, at);
+function isRecentError(record, at) {
+  const age = at - record.statusAt;
+  return record.status === "error" &&
+    Number.isFinite(record.statusAt) && age >= 0 && age <= ERROR_HOLD_MS;
+}
+
+function beginWork(record, at, { preserveRecentFeedback = false, preserveRecentError = false } = {}) {
+  // A real error outranks ordinary follow-up work for its own hold window. A
+  // success feedback only survives the next synchronous turn_start, as before.
+  const keepError = preserveRecentError && isRecentError(record, at);
+  const keepFeedback = !keepError && preserveRecentFeedback && isRecentFeedback(record, at);
   record.running = true;
   record.runEnded = false;
   record.toolName = null;
-  if (keepFeedback) {
+  if (keepError || keepFeedback) {
     // Keep the short result visible through the next synchronous work event.
     record.feedbackResumed = true;
   } else {
@@ -462,6 +563,10 @@ export function applyEvent(snapshot, identity, event, receivedAt = Date.now(), f
         toolName: null,
         feedbackResumed: false,
         runEnded: false,
+        drawingAt: 0,
+        lastRunEndedAt: 0,
+        lastToolErrorAt: 0,
+        lastToolSuccessAt: 0,
         closedAt: 0,
         hint: null,
         hintAt: 0,
@@ -511,36 +616,61 @@ export function applyEvent(snapshot, identity, event, receivedAt = Date.now(), f
   }
 
   if (event.type === "agent_start") {
-    beginWork(record, rawReceivedAt);
+    record.lastRunEndedAt = 0;
+    record.lastToolErrorAt = 0;
+    record.lastToolSuccessAt = 0;
+    beginWork(record, rawReceivedAt, { preserveRecentError: true });
   } else if (event.type === "turn_start") {
-    beginWork(record, rawReceivedAt, { preserveRecentFeedback: true });
+    beginWork(record, rawReceivedAt, { preserveRecentFeedback: true, preserveRecentError: true });
   } else if (event.type === "auto_retry_start") {
+    record.lastRunEndedAt = 0;
     beginWork(record, rawReceivedAt);
   } else if (event.type === "tool_execution_start") {
     const toolName = cleanText(event.toolName, 80);
-    record.running = true;
-    record.runEnded = false;
-    record.status = "working";
-    record.statusAt = rawReceivedAt;
-    record.feedbackResumed = false;
+    beginWork(record, rawReceivedAt, { preserveRecentError: true });
     record.toolName = toolName;
+    // A drawing tool returns as soon as the job is submitted. Remember when it was
+    // called so the native display layer can keep the drawing pose for its own hold.
+    if (isDrawingToolName(toolName)) record.drawingAt = rawReceivedAt;
   } else if (event.type === "tool_execution_end") {
     // The public end event promises isError, not a stable active-call correlation key.
     // Clear the single exposed tool name rather than retaining a potentially stale one.
     record.toolName = null;
     record.feedbackResumed = false;
+    // A successful follow-up tool must not erase a real error that is still inside
+    // its display hold; only a newer error refreshes the error clock.
+    const holdError = event.isError !== true && isRecentError(record, rawReceivedAt);
     if (typeof event.isError === "boolean") {
-      record.status = event.isError ? "error" : "success";
-      record.statusAt = rawReceivedAt;
-    } else {
+      if (event.isError) {
+        record.status = "error";
+        record.statusAt = rawReceivedAt;
+        record.lastToolErrorAt = rawReceivedAt;
+      } else if (!holdError) {
+        record.status = "success";
+        record.statusAt = rawReceivedAt;
+        record.lastToolSuccessAt = rawReceivedAt;
+      } else {
+        // The pose still holds the earlier error, but this success is real evidence
+        // that the run recovered before it ends.
+        record.lastToolSuccessAt = rawReceivedAt;
+      }
+    } else if (!holdError) {
       // An absent outcome flag is not evidence of success or failure.
       record.status = record.running ? "working" : "idle";
       record.statusAt = rawReceivedAt;
     }
   } else if (event.type === "agent_end") {
     const willRetry = event.willRetry === true;
-    const preserveUnrecoveredError = !willRetry && !record.feedbackResumed &&
-      record.status === "error" && isRecentFeedback(record, rawReceivedAt);
+    // A run ended in error only when the last observed tool outcome was an error.
+    // A later successful tool is real recovery evidence even if the error pose is
+    // still inside its display hold; otherwise a fast recovery could never complete.
+    const recovered = record.lastToolSuccessAt >= record.lastToolErrorAt &&
+      record.lastToolSuccessAt > 0;
+    const errored = record.status === "error" && !recovered;
+    // Display retention is separate from the business outcome: a recovered run may
+    // complete, but the error pose still gets its full four seconds before the
+    // completion can take over.
+    const heldError = isRecentError(record, rawReceivedAt);
     record.running = willRetry;
     record.runEnded = !willRetry;
     record.toolName = null;
@@ -548,13 +678,18 @@ export function applyEvent(snapshot, identity, event, receivedAt = Date.now(), f
     if (willRetry) {
       record.status = "working";
       record.statusAt = rawReceivedAt;
-    } else if (preserveUnrecoveredError) {
-      // Keep a just-observed tool error briefly; a tool result is never itself a whole-run success.
-      record.status = "error";
+      record.lastRunEndedAt = 0;
     } else {
-      // agent_end proves the observed agent run ended; this means lifecycle completion, not user-goal satisfaction.
-      record.status = "success";
-      record.statusAt = rawReceivedAt;
+      // Record the lifecycle end independently of what the display still shows.
+      record.lastRunEndedAt = errored ? 0 : rawReceivedAt;
+      if (heldError || errored) {
+        // Keep the real error and its original timestamp; the display layer holds it
+        // for the rest of its window and the completion waits behind it.
+      } else {
+        // agent_end proves the observed agent run ended; this means lifecycle completion, not user-goal satisfaction.
+        record.status = "success";
+        record.statusAt = rawReceivedAt;
+      }
     }
   } else if (event.type === "session_closed") {
     record.running = false;
@@ -564,6 +699,10 @@ export function applyEvent(snapshot, identity, event, receivedAt = Date.now(), f
     record.toolName = null;
     record.feedbackResumed = false;
     record.closedAt = rawReceivedAt;
+    record.drawingAt = 0;
+    record.lastRunEndedAt = 0;
+    record.lastToolErrorAt = 0;
+    record.lastToolSuccessAt = 0;
     // A closed session cannot be waiting on the user.
     record.hint = null;
     record.hintAt = 0;
@@ -574,6 +713,10 @@ export function applyEvent(snapshot, identity, event, receivedAt = Date.now(), f
     record.statusAt = rawReceivedAt;
     record.toolName = null;
     record.feedbackResumed = false;
+    record.drawingAt = 0;
+    record.lastRunEndedAt = 0;
+    record.lastToolErrorAt = 0;
+    record.lastToolSuccessAt = 0;
   }
   // turn_end and auto_retry_end are not whole-agent completion evidence; retain the last known work phase.
 
@@ -613,6 +756,7 @@ export function mergeSnapshot(snapshot, fromId, toId, observedAt = Date.now(), i
     : {
         sessionId: to, title: null, agentId: null, agentName: null, status: "idle",
         running: false, toolName: null, feedbackResumed: false, runEnded: false,
+        drawingAt: 0, lastRunEndedAt: 0, lastToolErrorAt: 0, lastToolSuccessAt: 0,
         closedAt: 0, lastActivityAt: 0, statusAt: 0,
       };
   // The real session's identity comes from the host, never from the placeholder.
@@ -620,7 +764,7 @@ export function mergeSnapshot(snapshot, fromId, toId, observedAt = Date.now(), i
     const known = cleanText(identity?.[key], key === "title" ? 120 : 128);
     if (known) merged[key] = known;
   }
-  for (const key of ["status", "running", "toolName", "feedbackResumed", "runEnded", "closedAt"]) {
+  for (const key of ["status", "running", "toolName", "feedbackResumed", "runEnded", "closedAt", "drawingAt", "lastRunEndedAt", "lastToolErrorAt", "lastToolSuccessAt"]) {
     if (source[key] === undefined) continue;
     if (source[key] === null || source[key] === false || source[key] === 0) continue;
     merged[key] = source[key];

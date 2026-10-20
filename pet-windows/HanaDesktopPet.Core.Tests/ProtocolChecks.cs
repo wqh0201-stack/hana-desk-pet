@@ -15,6 +15,7 @@ namespace HanaDesktopPet.Core.Tests
             CheckStateTimingAndSelection();
             CheckPoseReadback();
             CheckSnapshotWhitelist();
+            CheckV4Fields();
             CheckSelectionProtocol();
             CheckHttpCodecBoundaries();
         }
@@ -71,82 +72,178 @@ namespace HanaDesktopPet.Core.Tests
         {
             var store = new PetStateStore();
             var api = new PetAPI(store, new PetPoseReadbackStore());
-            PetHTTPResponse good = api.Handle(JsonRequest("POST", "/v3/snapshot", SnapshotJson()));
+            PetHTTPResponse good = api.Handle(JsonRequest("POST", "/v4/snapshot", SnapshotJson()));
             Check(good.StatusCode == 200 && store.ViewState().Activity.Title == "Synthetic session",
                 "A valid allowlisted synthetic snapshot is accepted.");
 
-            Check(api.Handle(JsonRequest("POST", "/v3/snapshot", SnapshotJson(extraRootField: true))).StatusCode == 400,
+            Check(api.Handle(JsonRequest("POST", "/v4/snapshot", SnapshotJson(extraRootField: true))).StatusCode == 400,
                 "Unknown root properties are rejected.");
-            Check(api.Handle(JsonRequest("POST", "/v3/snapshot", SnapshotJson(duplicateRevision: true))).StatusCode == 400,
+            Check(api.Handle(JsonRequest("POST", "/v4/snapshot", SnapshotJson(duplicateRevision: true))).StatusCode == 400,
                 "Duplicate JSON properties are rejected.");
-            Check(api.Handle(JsonRequest("POST", "/v3/snapshot", SnapshotJson(fractionalRevision: true))).StatusCode == 400,
+            Check(api.Handle(JsonRequest("POST", "/v4/snapshot", SnapshotJson(fractionalRevision: true))).StatusCode == 400,
                 "Fractional revision values are rejected.");
             string highPrecisionFraction = SnapshotJson().Replace("\"revision\":1,", "\"revision\":1.000000000000000000000000000001,");
-            Check(api.Handle(JsonRequest("POST", "/v3/snapshot", highPrecisionFraction)).StatusCode == 400,
+            Check(api.Handle(JsonRequest("POST", "/v4/snapshot", highPrecisionFraction)).StatusCode == 400,
                 "A high-precision fractional revision cannot round into an integer.");
             string integralExponent = SnapshotJson().Replace("\"revision\":1,", "\"revision\":1.0e0,");
-            Check(api.Handle(JsonRequest("POST", "/v3/snapshot", integralExponent)).StatusCode == 200,
+            Check(api.Handle(JsonRequest("POST", "/v4/snapshot", integralExponent)).StatusCode == 200,
                 "Mathematically integral exponent-form revisions are accepted.");
-            Check(api.Handle(JsonRequest("POST", "/v3/snapshot", SnapshotJson(booleanActivityTime: true))).StatusCode == 400,
+            Check(api.Handle(JsonRequest("POST", "/v4/snapshot", SnapshotJson(booleanActivityTime: true))).StatusCode == 400,
                 "Boolean timestamps are rejected as non-integers.");
-            Check(api.Handle(JsonRequest("POST", "/v3/snapshot", SnapshotJson(extraActivityField: true))).StatusCode == 400,
+            Check(api.Handle(JsonRequest("POST", "/v4/snapshot", SnapshotJson(extraActivityField: true))).StatusCode == 400,
                 "Unapproved activity fields are rejected.");
-            Check(api.Handle(JsonRequest("POST", "/v3/snapshot", SnapshotJson(controlInTitle: true))).StatusCode == 400,
+            Check(api.Handle(JsonRequest("POST", "/v4/snapshot", SnapshotJson(controlInTitle: true))).StatusCode == 400,
                 "Control characters in text are rejected.");
-            Check(api.Handle(JsonRequest("POST", "/v3/snapshot", SnapshotJson(longTitle: true))).StatusCode == 400,
+            Check(api.Handle(JsonRequest("POST", "/v4/snapshot", SnapshotJson(longTitle: true))).StatusCode == 400,
                 "Text over the field limit is rejected.");
-            Check(api.Handle(JsonRequest("POST", "/v3/snapshot", SnapshotJson(reorderedRoles: true))).StatusCode == 400,
+            Check(api.Handle(JsonRequest("POST", "/v4/snapshot", SnapshotJson(reorderedRoles: true))).StatusCode == 400,
                 "Character roster and order must exactly match the built-in whitelist.");
 
-            var noContentType = new PetHTTPRequest("POST", "/v3/snapshot", new Dictionary<string, string>(), Encoding.UTF8.GetBytes(SnapshotJson()));
+            var noContentType = new PetHTTPRequest("POST", "/v4/snapshot", new Dictionary<string, string>(), Encoding.UTF8.GetBytes(SnapshotJson()));
             Check(api.Handle(noContentType).StatusCode == 415, "Snapshot endpoint requires JSON content type.");
-            Check(api.Handle(new PetHTTPRequest("GET", "/v3/snapshot", new Dictionary<string, string>(), new byte[0])).StatusCode == 405,
+            Check(api.Handle(new PetHTTPRequest("GET", "/v4/snapshot", new Dictionary<string, string>(), new byte[0])).StatusCode == 405,
                 "Known endpoints reject the wrong HTTP method.");
             Check(api.Handle(new PetHTTPRequest("GET", "/other", new Dictionary<string, string>(), new byte[0])).StatusCode == 404,
                 "Unknown paths return not found.");
+            Check(api.Handle(new PetHTTPRequest("GET", "/v3/hello", new Dictionary<string, string>(), new byte[0])).StatusCode == 404,
+                "The retired v3 route is rejected.");
+            Check(api.Handle(JsonRequest("POST", "/v3/snapshot", SnapshotJson())).StatusCode == 404,
+                "The retired v3 snapshot route is rejected.");
+        }
+
+        private static void CheckV4Fields()
+        {
+            var store = new PetStateStore();
+            var api = new PetAPI(store, new PetPoseReadbackStore());
+            Check(api.Handle(JsonRequest("POST", "/v4/snapshot", V4SnapshotJson())).StatusCode == 200,
+                "A bounded v4 snapshot with follow, concurrency, notices and a spotlight is accepted.");
+            PetViewState state = store.ViewState();
+            Check(state.FollowMode == "pinned" && state.ConcurrentSessions == 3 &&
+                state.Notifications.Count == 1 && state.Activity.Spotlight != null &&
+                state.Activity.Spotlight.Kind == "drawing" && state.Activity.Spotlight.At == 123,
+                "The v4 metadata is projected without touching activity status.");
+            Check(api.Handle(JsonRequest("POST", "/v4/snapshot", V4SnapshotJson(badMode: true))).StatusCode == 400,
+                "An unknown follow mode is rejected.");
+            Check(api.Handle(JsonRequest("POST", "/v4/snapshot", V4SnapshotJson(badConcurrency: true))).StatusCode == 400,
+                "Out-of-range concurrency is rejected.");
+            Check(api.Handle(JsonRequest("POST", "/v4/snapshot", V4SnapshotJson(tooManyNotices: true))).StatusCode == 400,
+                "More than eight notices are rejected.");
+            Check(api.Handle(JsonRequest("POST", "/v4/snapshot", V4SnapshotJson(badNoticeId: true))).StatusCode == 400,
+                "An unsafe notice id is rejected.");
+            Check(api.Handle(JsonRequest("POST", "/v4/snapshot", V4SnapshotJson(badNoticeKind: true))).StatusCode == 400,
+                "An unknown notice kind is rejected.");
+            Check(api.Handle(JsonRequest("POST", "/v4/snapshot", V4SnapshotJson(badSpotlight: true))).StatusCode == 400,
+                "An unknown spotlight kind is rejected.");
+            Check(api.Handle(JsonRequest("POST", "/v4/snapshot", V4SnapshotJson(duplicateNotice: true))).StatusCode == 400,
+                "Duplicate notice ids are rejected.");
+            Check(api.Handle(JsonRequest("POST", "/v4/snapshot", V4SnapshotJson(wrongModeType: true))).StatusCode == 400,
+                "A non-string follow mode is rejected.");
+            Check(api.Handle(JsonRequest("POST", "/v4/snapshot", V4SnapshotJson(wrongConcurrencyType: true))).StatusCode == 400,
+                "A non-integer concurrency count is rejected.");
+            Check(api.Handle(JsonRequest("POST", "/v4/snapshot", V4SnapshotJson(wrongNoticesType: true))).StatusCode == 400,
+                "A non-array notifications value is rejected.");
+            Check(api.Handle(JsonRequest("POST", "/v4/snapshot", V4SnapshotJson(missingSpotlightAt: true))).StatusCode == 400,
+                "A spotlight without its timestamp is rejected.");
+            Check(api.Handle(JsonRequest("POST", "/v4/snapshot", V4SnapshotJson(unknownRoot: true))).StatusCode == 400,
+                "An unknown v4 root field is rejected.");
+            Check(store.ViewState().FollowMode == "pinned",
+                "A rejected v4 field never mutates the accepted snapshot.");
+        }
+
+        private static string V4SnapshotJson(bool badMode = false, bool badConcurrency = false,
+            bool tooManyNotices = false, bool badNoticeId = false, bool badNoticeKind = false,
+            bool badSpotlight = false, bool duplicateNotice = false, bool wrongModeType = false,
+            bool wrongConcurrencyType = false, bool wrongNoticesType = false,
+            bool missingSpotlightAt = false, bool unknownRoot = false)
+        {
+            string characters = String.Join(",", PetRole.BuiltIns.Select(role =>
+                "{\"id\":\"" + role.Id + "\",\"name\":\"" + role.Name + "\"}"));
+            string mode = badMode ? "\"other\"" : (wrongModeType ? "4" : "\"pinned\"");
+            string concurrency = badConcurrency ? "33" : (wrongConcurrencyType ? "\"3\"" : "3");
+            string notices;
+            if (tooManyNotices)
+            {
+                notices = "[" + String.Join(",", Enumerable.Range(0, 9).Select(index =>
+                    "{\"id\":\"completion:0badf00d:" + index + "\",\"kind\":\"completion\",\"at\":" + index + "}").ToArray()) + "]";
+            }
+            else if (badNoticeId)
+            {
+                notices = "[{\"id\":\"bad id!/../x\",\"kind\":\"completion\",\"at\":1}]";
+            }
+            else if (badNoticeKind)
+            {
+                notices = "[{\"id\":\"completion:0badf00d:1\",\"kind\":\"success\",\"at\":1}]";
+            }
+            else if (duplicateNotice)
+            {
+                notices = "[{\"id\":\"completion:0badf00d:1\",\"kind\":\"completion\",\"at\":1}," +
+                    "{\"id\":\"completion:0badf00d:1\",\"kind\":\"completion\",\"at\":2}]";
+            }
+            else if (wrongNoticesType)
+            {
+                notices = "\"none\"";
+            }
+            else
+            {
+                notices = "[{\"id\":\"confirmation:0badf00d:122\",\"kind\":\"confirmation\",\"sessionId\":\"synthetic-session\",\"title\":\"Synthetic session\",\"at\":122}]";
+            }
+            string spotlight;
+            if (badSpotlight)
+                spotlight = ",\"spotlight\":{\"kind\":\"video\",\"at\":123}";
+            else if (missingSpotlightAt)
+                spotlight = ",\"spotlight\":{\"kind\":\"drawing\"}";
+            else
+                spotlight = ",\"spotlight\":{\"kind\":\"drawing\",\"at\":123}";
+            return "{\"schemaVersion\":4,\"revision\":2,\"characters\":[" + characters + "]," +
+                "\"followMode\":" + mode + ",\"concurrentSessions\":" + concurrency +
+                ",\"notifications\":" + notices +
+                (unknownRoot ? ",\"unexpected\":1" : "") +
+                ",\"activity\":{\"sessionId\":\"synthetic-session\",\"title\":\"Synthetic session\"," +
+                "\"agentId\":\"agent\",\"agentName\":\"Agent\",\"status\":\"working\",\"toolName\":\"tool\"," +
+                "\"lastActivityAt\":123" + spotlight + "}}";
         }
 
         private static void CheckSelectionProtocol()
         {
             var store = new PetStateStore();
             var api = new PetAPI(store, new PetPoseReadbackStore());
-            PetHTTPResponse selected = api.Handle(JsonRequest("POST", "/v3/selection",
-                "{\"schemaVersion\":3,\"characterId\":\"gpt\",\"expectedRevision\":0,\"updatedAt\":100}"));
+            PetHTTPResponse selected = api.Handle(JsonRequest("POST", "/v4/selection",
+                "{\"schemaVersion\":4,\"characterId\":\"gpt\",\"expectedRevision\":0,\"updatedAt\":100}"));
             Check(selected.StatusCode == 200 && store.CurrentSelection().CharacterId == "gpt" && store.CurrentSelection().Revision == 1,
                 "A valid revision-checked remote selection updates state.");
-            PetHTTPResponse conflict = api.Handle(JsonRequest("POST", "/v3/selection",
-                "{\"schemaVersion\":3,\"characterId\":\"claude\",\"expectedRevision\":0,\"updatedAt\":200}"));
+            PetHTTPResponse conflict = api.Handle(JsonRequest("POST", "/v4/selection",
+                "{\"schemaVersion\":4,\"characterId\":\"claude\",\"expectedRevision\":0,\"updatedAt\":200}"));
             Check(conflict.StatusCode == 409 && store.CurrentSelection().CharacterId == "gpt",
                 "Stale selection writes return the current state as a conflict.");
-            PetHTTPResponse unknown = api.Handle(JsonRequest("POST", "/v3/selection",
-                "{\"schemaVersion\":3,\"characterId\":\"not-a-role\",\"expectedRevision\":1,\"updatedAt\":200}"));
+            PetHTTPResponse unknown = api.Handle(JsonRequest("POST", "/v4/selection",
+                "{\"schemaVersion\":4,\"characterId\":\"not-a-role\",\"expectedRevision\":1,\"updatedAt\":200}"));
             Check(unknown.StatusCode == 400 && JsonString(unknown.Body, "error") == "unknown_character",
                 "Syntactically valid but unavailable roles are rejected.");
-            PetHTTPResponse duplicate = api.Handle(JsonRequest("POST", "/v3/selection",
-                "{\"schemaVersion\":3,\"characterId\":\"claude\",\"expectedRevision\":1,\"updatedAt\":200,\"updatedAt\":201}"));
+            PetHTTPResponse duplicate = api.Handle(JsonRequest("POST", "/v4/selection",
+                "{\"schemaVersion\":4,\"characterId\":\"claude\",\"expectedRevision\":1,\"updatedAt\":200,\"updatedAt\":201}"));
             Check(duplicate.StatusCode == 400, "Duplicate selection fields are rejected.");
-            PetHTTPResponse overflow = api.Handle(JsonRequest("POST", "/v3/selection",
-                "{\"schemaVersion\":3,\"characterId\":\"claude\",\"expectedRevision\":9223372036854775808,\"updatedAt\":200}"));
+            PetHTTPResponse overflow = api.Handle(JsonRequest("POST", "/v4/selection",
+                "{\"schemaVersion\":4,\"characterId\":\"claude\",\"expectedRevision\":9223372036854775808,\"updatedAt\":200}"));
             Check(overflow.StatusCode == 400, "Out-of-range integers are rejected.");
 
             var numericApi = new PetAPI(new PetStateStore(), new PetPoseReadbackStore());
-            PetHTTPResponse maximumTimestamp = numericApi.Handle(JsonRequest("POST", "/v3/selection",
-                "{\"schemaVersion\":3,\"characterId\":\"gpt\",\"expectedRevision\":0,\"updatedAt\":9223372036854775807.0}"));
+            PetHTTPResponse maximumTimestamp = numericApi.Handle(JsonRequest("POST", "/v4/selection",
+                "{\"schemaVersion\":4,\"characterId\":\"gpt\",\"expectedRevision\":0,\"updatedAt\":9223372036854775807.0}"));
             Check(maximumTimestamp.StatusCode == 200 && JsonSelectionLong(maximumTimestamp.Body, "updatedAt") == Int64.MaxValue,
                 "The exact Int64 upper bound remains valid when written as an integral decimal.");
-            PetHTTPResponse roundedFraction = numericApi.Handle(JsonRequest("POST", "/v3/selection",
-                "{\"schemaVersion\":3,\"characterId\":\"claude\",\"expectedRevision\":1,\"updatedAt\":1.000000000000000000000000000001}"));
+            PetHTTPResponse roundedFraction = numericApi.Handle(JsonRequest("POST", "/v4/selection",
+                "{\"schemaVersion\":4,\"characterId\":\"claude\",\"expectedRevision\":1,\"updatedAt\":1.000000000000000000000000000001}"));
             Check(roundedFraction.StatusCode == 400,
                 "A high-precision fractional timestamp cannot round into an integer.");
 
-            PetHTTPResponse hello = api.Handle(new PetHTTPRequest("GET", "/v3/hello", new Dictionary<string, string>(), new byte[0]));
-            Check(hello.StatusCode == 200 && JsonLong(hello.Body, "protocolVersion") == 3,
-                "Hello identifies protocol version 3.");
+            PetHTTPResponse hello = api.Handle(new PetHTTPRequest("GET", "/v4/hello", new Dictionary<string, string>(), new byte[0]));
+            Check(hello.StatusCode == 200 && JsonLong(hello.Body, "protocolVersion") == 4,
+                "Hello identifies protocol version 4.");
 
             var readback = new PetPoseReadbackStore();
             readback.Update("deepseek", "tool", true, 123456);
             PetHTTPResponse stateResponse = new PetAPI(store, readback).Handle(
-                new PetHTTPRequest("GET", "/v3/state", new Dictionary<string, string>(), new byte[0]));
+                new PetHTTPRequest("GET", "/v4/state", new Dictionary<string, string>(), new byte[0]));
             Check(stateResponse.StatusCode == 200 && JsonString(stateResponse.Body, "characterId") == "deepseek" &&
                 JsonString(stateResponse.Body, "pose") == "tool" && JsonBoolean(stateResponse.Body, "fallback"),
                 "State endpoint reports the renderer's actual pose readback.");
@@ -154,12 +251,12 @@ namespace HanaDesktopPet.Core.Tests
 
         private static void CheckHttpCodecBoundaries()
         {
-            byte[] head = Encoding.ASCII.GetBytes("POST /v3/snapshot HTTP/1.1\r\nHost: 127.0.0.1:43127\r\ncontent-type: application/json\r\nContent-Length: 2\r\n\r\n");
+            byte[] head = Encoding.ASCII.GetBytes("POST /v4/snapshot HTTP/1.1\r\nHost: 127.0.0.1:43127\r\ncontent-type: application/json\r\nContent-Length: 2\r\n\r\n");
             Check(PetHTTPCodec.Parse(head) == null, "Partial Content-Length bodies remain incomplete.");
             byte[] body = Encoding.ASCII.GetBytes("{}");
             var complete = head.Concat(body).ToArray();
             PetHTTPRequest parsed = PetHTTPCodec.Parse(complete);
-            Check(parsed != null && parsed.Method == "POST" && parsed.Path == "/v3/snapshot" && parsed.Body.Length == 2 &&
+            Check(parsed != null && parsed.Method == "POST" && parsed.Path == "/v4/snapshot" && parsed.Body.Length == 2 &&
                 parsed.Headers["content-type"] == "application/json",
                 "A complete request parses with normalized header names.");
 
@@ -193,7 +290,7 @@ namespace HanaDesktopPet.Core.Tests
             string activityExtra = extraActivityField ? ",\"prompt\":\"forbidden\"" : "";
             string revision = fractionalRevision ? "1.5" : (duplicateRevision ? "1,\"revision\":1" : "1");
             string activityTime = booleanActivityTime ? "true" : "123";
-            return "{\"schemaVersion\":3,\"revision\":" + revision + ",\"characters\":[" + characters + "]," +
+            return "{\"schemaVersion\":4,\"revision\":" + revision + ",\"characters\":[" + characters + "]," +
                 "\"activity\":{\"sessionId\":\"synthetic-session\",\"title\":\"" + title + "\",\"agentId\":\"agent\",\"agentName\":\"Agent\",\"status\":\"working\",\"toolName\":\"tool\",\"lastActivityAt\":" + activityTime + activityExtra + "}" +
                 (extraRootField ? ",\"prompt\":\"forbidden\"}" : "}");
         }
@@ -220,7 +317,7 @@ namespace HanaDesktopPet.Core.Tests
             return Convert.ToInt64(value[property]);
         }
 
-        // POST /v3/selection answers with the updated selection wrapped in a "selection" envelope.
+        // POST /v4/selection answers with the updated selection wrapped in a "selection" envelope.
         private static long JsonSelectionLong(byte[] body, string property)
         {
             var serializer = new JavaScriptSerializer();

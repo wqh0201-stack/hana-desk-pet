@@ -1,0 +1,678 @@
+{
+  "schemaVersion": 1,
+  "note": "Desk-pet status subtitles. Wording is original to this project; no upstream CrossPet lines are used.",
+  "minDwellSeconds": 2.5,
+  "defaultDwellSeconds": null,
+  "stateOrder": [
+    "idle",
+    "thinking",
+    "reading",
+    "writing",
+    "searching",
+    "running",
+    "delegating",
+    "drawing",
+    "busy",
+    "happy",
+    "oops",
+    "asking",
+    "compact",
+    "interrupted",
+    "tired",
+    "sleeping",
+    "swamped",
+    "proud",
+    "picked-up",
+    "pat"
+  ],
+  "poseStates": {
+    "idle": "idle",
+    "idle-2": "idle",
+    "idle-3": "idle",
+    "idle-blink": "idle",
+    "clawd": "idle",
+    "float": "idle",
+    "swim": "idle",
+    "eat": "idle",
+    "feast": "idle",
+    "slack": "idle",
+    "masked": "idle",
+    "pricetag": "idle",
+    "soldout": "idle",
+    "reset": "idle",
+    "reset_bell": "idle",
+    "reset_check": "idle",
+    "reset_hope": "idle",
+    "reset_maybe": "idle",
+    "reset_nope": "idle",
+    "thinking": "thinking",
+    "thinking-2": "thinking",
+    "deepthink": "thinking",
+    "reading": "reading",
+    "reading-2": "reading",
+    "writing": "writing",
+    "searching": "searching",
+    "running": "running",
+    "delegating": "delegating",
+    "drawing": "drawing",
+    "busy_left": "busy",
+    "busy_right": "busy",
+    "happy": "happy",
+    "happy-2": "happy",
+    "proud": "proud",
+    "oops": "oops",
+    "sorry": "oops",
+    "asking": "asking",
+    "listening": "asking",
+    "compact": "compact",
+    "surprised": "interrupted",
+    "tired": "tired",
+    "sleeping": "sleeping",
+    "sleeping-2": "sleeping",
+    "swamped_left": "swamped",
+    "swamped_right": "swamped",
+    "picked-up": "picked-up",
+    "picked-up-2": "picked-up"
+  },
+  "unreachableStates": [
+    "pat"
+  ],
+  "dwellSeconds": {
+    "idle": 6.0,
+    "thinking": null,
+    "reading": null,
+    "writing": null,
+    "searching": null,
+    "running": null,
+    "delegating": null,
+    "drawing": 4.0,
+    "busy": null,
+    "happy": 5.0,
+    "oops": 4.0,
+    "asking": null,
+    "compact": null,
+    "interrupted": 3.0,
+    "tired": null,
+    "sleeping": null,
+    "swamped": null,
+    "proud": 6.0,
+    "picked-up": null,
+    "pat": 4.0
+  },
+  "characters": {
+    "claude": {
+      "idle": [
+        "……在看一会儿书。",
+        "（把橙花摆正）"
+      ],
+      "thinking": [
+        "让我想想。",
+        "嗯……这里要小心。"
+      ],
+      "reading": [
+        "翻两页。",
+        "先把上下文读全。"
+      ],
+      "writing": [
+        "这样写会更清楚。",
+        "落笔，改一版。"
+      ],
+      "searching": [
+        "去查一下出处。",
+        "先找资料。"
+      ],
+      "running": [
+        "跑一遍试试。",
+        "命令交给我。"
+      ],
+      "delegating": [
+        "这部分交给别人跑。",
+        "分头做更快。"
+      ],
+      "drawing": [
+        "画点什么好呢。",
+        "配色我来定。"
+      ],
+      "busy": [
+        "手上有点多。",
+        "一件一件来。"
+      ],
+      "happy": [
+        "搞定，你看看。",
+        "这次应该对了。"
+      ],
+      "oops": [
+        "啊，出错了。",
+        "让我修一下。"
+      ],
+      "asking": [
+        "这里需要你定。",
+        "你选哪个？"
+      ],
+      "compact": [
+        "记忆有点满了，整理一下。",
+        "把前面收进抽屉。"
+      ],
+      "interrupted": [
+        "咦，打断了？",
+        "好，我先停。"
+      ],
+      "tired": [
+        "……看了太久了。",
+        "眼睛有点酸。"
+      ],
+      "sleeping": [
+        "zZ",
+        "（抱着书睡着了）"
+      ],
+      "swamped": [
+        "好几头一起烧。",
+        "我尽量都顾上。"
+      ],
+      "proud": [
+        "这一轮，干得漂亮。",
+        "（把书签夹好）"
+      ],
+      "picked-up": [
+        "哇，别拎那儿。",
+        "放我下来啦。"
+      ],
+      "pat": [
+        "嗯，摸头收到。",
+        "（橙花晃了晃）"
+      ]
+    },
+    "gpt": {
+      "idle": [
+        "在。",
+        "待命。"
+      ],
+      "thinking": [
+        "先推演一遍。",
+        "让我过一遍逻辑。"
+      ],
+      "reading": [
+        "读。",
+        "扫一遍再说。"
+      ],
+      "writing": [
+        "改这里。",
+        "删掉多余的部分。"
+      ],
+      "searching": [
+        "查。",
+        "确认来源。"
+      ],
+      "running": [
+        "执行。",
+        "跑。"
+      ],
+      "delegating": [
+        "分出去。",
+        "并行处理。"
+      ],
+      "drawing": [
+        "出图。",
+        "构图定了。"
+      ],
+      "busy": [
+        "排队。",
+        "一件一件。"
+      ],
+      "happy": [
+        "完成。",
+        "验收吧。"
+      ],
+      "oops": [
+        "出错了。",
+        "把日志给我。"
+      ],
+      "asking": [
+        "需要你拍板。",
+        "等你一句。"
+      ],
+      "compact": [
+        "压缩上下文。",
+        "把旧账合上。"
+      ],
+      "interrupted": [
+        "被打断了。",
+        "停。"
+      ],
+      "tired": [
+        "效率在掉。",
+        "该歇了。"
+      ],
+      "sleeping": [
+        "zZ",
+        "（尾巴垂下来）"
+      ],
+      "swamped": [
+        "线程太多了。",
+        "我在切。"
+      ],
+      "proud": [
+        "这一轮，合格。",
+        "（难得地点头）"
+      ],
+      "picked-up": [
+        "放、放我下来。",
+        "这样不体面。"
+      ],
+      "pat": [
+        "……嗯。",
+        "（别过头去）"
+      ]
+    },
+    "deepseek": {
+      "idle": [
+        "……咕噜咕噜",
+        "（尾巴拍水）"
+      ],
+      "thinking": [
+        "潜下去想一想～",
+        "让咱琢磨琢磨。"
+      ],
+      "reading": [
+        "翻翻看～",
+        "一页一页读。"
+      ],
+      "writing": [
+        "写写写～",
+        "别催，在写了。"
+      ],
+      "searching": [
+        "出海找找～",
+        "撒网捞资料。"
+      ],
+      "running": [
+        "跑一下～",
+        "开动！"
+      ],
+      "delegating": [
+        "叫小鱼们帮忙～",
+        "分头游。"
+      ],
+      "drawing": [
+        "画画时间！",
+        "大鱼画家上线～"
+      ],
+      "busy": [
+        "好多事呀……",
+        "一件一件来嘛。"
+      ],
+      "happy": [
+        "搞定啦！",
+        "咱厉害吧～"
+      ],
+      "oops": [
+        "啊呀，出岔子了。",
+        "别急，咱修。"
+      ],
+      "asking": [
+        "这个要你决定～",
+        "咱不敢乱动。"
+      ],
+      "compact": [
+        "脑子装不下了，收一收。",
+        "把旧的塞进箱子。"
+      ],
+      "interrupted": [
+        "咦？被打断了。",
+        "咱先停一停。"
+      ],
+      "tired": [
+        "有点饿……余额也不多了。",
+        "想扒口白饭。"
+      ],
+      "sleeping": [
+        "zZ……",
+        "（抱着饭碗睡着）"
+      ],
+      "swamped": [
+        "晕了晕了，转不过来了。",
+        "好几个对话在跑！"
+      ],
+      "proud": [
+        "这活咱干得漂亮！",
+        "（叉腰）"
+      ],
+      "picked-up": [
+        "哇哇哇别拎！",
+        "尾巴、尾巴要断了！"
+      ],
+      "pat": [
+        "嘿嘿～",
+        "（尾巴啪嗒啪嗒）"
+      ]
+    },
+    "gemini": {
+      "idle": [
+        "（飘着）",
+        "在哦，一直飘着。"
+      ],
+      "thinking": [
+        "让我转一下脑子。",
+        "嗯……有想法了！"
+      ],
+      "reading": [
+        "一眼扫过去～",
+        "这个我读过。"
+      ],
+      "writing": [
+        "写啦写啦。",
+        "排版也要好看。"
+      ],
+      "searching": [
+        "搜搜搜。",
+        "全网都翻一遍。"
+      ],
+      "running": [
+        "跑起来跑起来。",
+        "执行！"
+      ],
+      "delegating": [
+        "分给别的猫。",
+        "并行开跑。"
+      ],
+      "drawing": [
+        "香蕉画笔准备～",
+        "这次画得超好看！"
+      ],
+      "busy": [
+        "手上三件事！",
+        "别急别急。"
+      ],
+      "happy": [
+        "好啦！好看吗？",
+        "完成～"
+      ],
+      "oops": [
+        "哎呀。",
+        "这只手不是我的锅。"
+      ],
+      "asking": [
+        "要你选一下！",
+        "等你哦。"
+      ],
+      "compact": [
+        "塞太多啦，压缩一下。",
+        "记忆打折中。"
+      ],
+      "interrupted": [
+        "诶？被叫停了。",
+        "好，我先停。"
+      ],
+      "tired": [
+        "飘不动了。",
+        "要充电。"
+      ],
+      "sleeping": [
+        "zZ",
+        "（浮在半空睡着）"
+      ],
+      "swamped": [
+        "四个对话！四个！",
+        "猫要裂开了。"
+      ],
+      "proud": [
+        "这波超神！",
+        "（尾巴竖起来）"
+      ],
+      "picked-up": [
+        "喵？！放下来！",
+        "我恐高——"
+      ],
+      "pat": [
+        "喵～",
+        "（耳朵动了动）"
+      ]
+    },
+    "glm": {
+      "idle": [
+        "（翻价签）",
+        "今天也是好价钱。"
+      ],
+      "thinking": [
+        "让我算算。",
+        "这笔账有得算。"
+      ],
+      "reading": [
+        "先看看条款。",
+        "小字也要读。"
+      ],
+      "writing": [
+        "改两个字，价钱就不同了。",
+        "落笔。"
+      ],
+      "searching": [
+        "比个价。",
+        "看看别人卖多少。"
+      ],
+      "running": [
+        "跑一遍，别浪费。",
+        "执行。"
+      ],
+      "delegating": [
+        "让小的们去。",
+        "外包更划算。"
+      ],
+      "drawing": [
+        "画张宣传图。",
+        "要卖相好。"
+      ],
+      "busy": [
+        "客人有点多。",
+        "一个一个来，都别走。"
+      ],
+      "happy": [
+        "成交！",
+        "这一单漂亮。"
+      ],
+      "oops": [
+        "呀，出岔了。",
+        "别声张，我来补。"
+      ],
+      "asking": [
+        "您定个价？",
+        "等您点头。"
+      ],
+      "compact": [
+        "账本太厚，收一收。",
+        "旧账先封起来。"
+      ],
+      "interrupted": [
+        "诶，被打断了。",
+        "急着走？"
+      ],
+      "tired": [
+        "算了一天，眼睛累。",
+        "该歇了。"
+      ],
+      "sleeping": [
+        "zZ",
+        "（抱着钱箱睡着）"
+      ],
+      "swamped": [
+        "这么多单，我一个人？",
+        "忙不过来啦。"
+      ],
+      "proud": [
+        "这单赚大了。",
+        "（眼睛笑成一条线）"
+      ],
+      "picked-up": [
+        "哎哟，我的价签！",
+        "轻点轻点。"
+      ],
+      "pat": [
+        "……要收费的哦。",
+        "（笑眯眯）"
+      ]
+    },
+    "deepseek-hoodie": {
+      "idle": [
+        "（把卫衣拉正）",
+        "我现在是 Claude。"
+      ],
+      "thinking": [
+        "让我像 Claude 一样想。",
+        "嗯……深——深——"
+      ],
+      "reading": [
+        "读文件，我现在会了。",
+        "（其实只看懂了标题）"
+      ],
+      "writing": [
+        "写代码我可是专业的。",
+        "（抄了两行）"
+      ],
+      "searching": [
+        "查一下，我很擅长查。",
+        "这个……搜搜看。"
+      ],
+      "running": [
+        "跑命令，稳的。",
+        "别怕，我学过。"
+      ],
+      "delegating": [
+        "分给小—— 分给同事。",
+        "团队协作嘛。"
+      ],
+      "drawing": [
+        "画画？我也会一点。",
+        "大鱼画家……不对。"
+      ],
+      "busy": [
+        "我很忙，我很专业。",
+        "别打扰专家。"
+      ],
+      "happy": [
+        "搞定！我很厉害吧！",
+        "……差不多吧？"
+      ],
+      "oops": [
+        "这、这是故意的。",
+        "Claude 也会出错。"
+      ],
+      "asking": [
+        "这里……你说了算。",
+        "我不太确定。"
+      ],
+      "compact": [
+        "压缩？我脑子够大。",
+        "……有点挤。"
+      ],
+      "interrupted": [
+        "谁打断专家的思路！",
+        "哦，是您。"
+      ],
+      "tired": [
+        "装聪明很累的。",
+        "想吃饭。"
+      ],
+      "sleeping": [
+        "zZ",
+        "（卫衣帽子盖住脸）"
+      ],
+      "swamped": [
+        "好多活！专业的人也怕。",
+        "别、别一起上。"
+      ],
+      "proud": [
+        "看见没，这就是实力。",
+        "（卫衣穿反了）"
+      ],
+      "picked-up": [
+        "别揪卫衣！是借的！",
+        "会坏的会坏的！"
+      ],
+      "pat": [
+        "嘿嘿，谢啦。",
+        "（忘了装聪明）"
+      ]
+    },
+    "gpt-onesie": {
+      "idle": [
+        "……",
+        "（发呆）"
+      ],
+      "thinking": [
+        "想……想什么来着。",
+        "哦对，要想事情。"
+      ],
+      "reading": [
+        "这些字……好多。",
+        "慢慢看。"
+      ],
+      "writing": [
+        "写歪了。",
+        "再写一遍。"
+      ],
+      "searching": [
+        "找东西……找什么？",
+        "哦，是这个。"
+      ],
+      "running": [
+        "跑……先备份一下。",
+        "跑吧跑吧。"
+      ],
+      "delegating": [
+        "叫别人……叫谁？",
+        "去吧去吧。"
+      ],
+      "drawing": [
+        "画画！画饭。",
+        "（画了一碗白饭）"
+      ],
+      "busy": [
+        "好忙……好乱。",
+        "先做哪个好。"
+      ],
+      "happy": [
+        "做完了！",
+        "饭呢？"
+      ],
+      "oops": [
+        "哦……坏了。",
+        "不要紧吧？"
+      ],
+      "asking": [
+        "要……要你决定。",
+        "我不会。"
+      ],
+      "compact": [
+        "东西太多，塞不下了。",
+        "挤一挤。"
+      ],
+      "interrupted": [
+        "诶……停了？",
+        "哦，停了。"
+      ],
+      "tired": [
+        "额度……能吃吗。",
+        "好累。"
+      ],
+      "sleeping": [
+        "zZ",
+        "（趴在连体服里睡）"
+      ],
+      "swamped": [
+        "好多……好多活。",
+        "脑子转不动了。"
+      ],
+      "proud": [
+        "厉害吧……大概。",
+        "（歪头）"
+      ],
+      "picked-up": [
+        "哇——放我下来。",
+        "衣服要扯开了。"
+      ],
+      "pat": [
+        "哦。",
+        "（慢半拍地笑）"
+      ]
+    }
+  }
+}

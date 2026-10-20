@@ -23,15 +23,21 @@ namespace HanaDesktopPet.Core
         public bool Fallback { get; private set; }
         public IReadOnlyList<PetPoseLayer> Layers { get; private set; }
         public double? NextWakeAt { get; private set; }
+        public PetNoticePresentation Notice { get; private set; }
+        /// <summary>The resolved bubble: a notice, a status subtitle, or null when hidden.</summary>
+        public PetBubbleContent Bubble { get; private set; }
 
         public PetRenderFrame(string characterId, string pose, bool fallback,
-            IReadOnlyList<PetPoseLayer> layers, double? nextWakeAt)
+            IReadOnlyList<PetPoseLayer> layers, double? nextWakeAt, PetNoticePresentation notice = null,
+            PetBubbleContent bubble = null)
         {
             CharacterId = characterId;
             Pose = pose;
             Fallback = fallback;
             Layers = layers;
             NextWakeAt = nextWakeAt;
+            Notice = notice;
+            Bubble = bubble;
         }
     }
 
@@ -50,6 +56,10 @@ namespace HanaDesktopPet.Core
         private PetMoodTracker _moodTracker = new PetMoodTracker();
         private PetWorkPoseScheduler _workScheduler = new PetWorkPoseScheduler();
         private readonly PetPickUpAnimation _pickUp = new PetPickUpAnimation();
+        private readonly PetSpotlightHold _spotlightHold = new PetSpotlightHold();
+        private readonly PetNoticeCenter _noticeCenter = new PetNoticeCenter();
+        private PetSubtitleSelector _subtitle;
+        private PetSubtitleFrame _subtitleFrame;
         private PetViewState _lastState;
         private string _currentCharacterId;
         private string _currentSessionId;
@@ -59,6 +69,7 @@ namespace HanaDesktopPet.Core
         private bool _isDragging;
         private bool _lastReduceMotion;
         private bool _lastAnimationsEnabled = true;
+        private bool _swampedWork;
 
         public PetAnimator(Func<string, ISet<string>> availablePoses)
         {
@@ -66,9 +77,19 @@ namespace HanaDesktopPet.Core
             _availablePoses = availablePoses;
         }
 
+        /// <summary>
+        /// Supplies the bundled subtitle table. Until it is set, the renderer behaves as
+        /// before: notices only, no status subtitles.
+        /// </summary>
+        internal void AttachSubtitleCatalog(PetSubtitleCatalog catalog, ulong seed)
+        {
+            _subtitle = catalog == null ? null : new PetSubtitleSelector(catalog, seed);
+        }
+
         public bool IsDragging { get { return _isDragging; } }
 
-        public PetRenderFrame Update(PetViewState state, double nowSeconds, bool reduceMotion = false, bool animationsEnabled = true)
+        public PetRenderFrame Update(PetViewState state, double nowSeconds, bool reduceMotion = false,
+            bool animationsEnabled = true, bool noticesEnabled = true, long wallNowMs = 0)
         {
             if (state == null) throw new ArgumentNullException("state");
             double now = NormalizeTime(nowSeconds);
@@ -76,13 +97,27 @@ namespace HanaDesktopPet.Core
             PetSelection selection = state.Selection ?? new PetSelection();
             string characterId = String.IsNullOrEmpty(selection.CharacterId) ? "claude" : selection.CharacterId;
             string status = NormalizeStatus(state.DisplayStatus);
-            string hint = status == "error" ? null : NormalizeHint(state.DisplayHint);
+            string rawHint = NormalizeHint(state.DisplayHint);
+            // Waiting for confirmation outranks an error; the other hints keep their
+            // existing lower priority and let a real error show oops.
+            string hint = (status == "error" && rawHint != "confirming") ? null : rawHint;
             string sessionId = activity.SessionId;
+
+            _spotlightHold.Update(state.DisplaySpotlight, now, wallNowMs);
+            bool drawingActive = _spotlightHold.IsActive(now);
 
             bool roleChanged = _hasState && _currentCharacterId != characterId;
             bool sessionChanged = _hasState && _currentSessionId != sessionId;
             ISet<string> poses = GetAvailablePoses(characterId);
             bool poseCatalogChanged = _hasState && _currentCharacterId == characterId && !_currentPoses.SetEquals(poses);
+
+            WorkPoseSet normalWorkPoses = PetPosePlanner.WorkPoses(characterId, poses);
+            bool unboundConcurrent = state.DisplayFollowMode != "pinned" && state.DisplayConcurrentSessions >= 2;
+            WorkPoseSet workPoses = unboundConcurrent
+                ? (PetPosePlanner.SwampedWorkPoses(characterId, poses) ?? normalWorkPoses)
+                : normalWorkPoses;
+            bool swampedChanged = _swampedWork != unboundConcurrent;
+            _swampedWork = unboundConcurrent;
 
             if (roleChanged)
             {
@@ -94,22 +129,25 @@ namespace HanaDesktopPet.Core
             {
                 _workScheduler = new PetWorkPoseScheduler();
                 _moodTracker.Reset();
+                _spotlightHold.Reset();
                 _timeline.InterruptReaction(now);
                 _isDragging = false;
                 _pickUp.End();
             }
             else if (roleChanged)
             {
-                WorkPoseSet changedWorkPoses = PetPosePlanner.WorkPoses(characterId, poses);
-                _workScheduler.RebuildRhythm(changedWorkPoses, now);
+                _workScheduler.RebuildRhythm(workPoses, now);
             }
             else if (poseCatalogChanged)
             {
                 _timeline = new PetPoseTimeline();
                 _isDragging = false;
                 _pickUp.End();
-                WorkPoseSet changedWorkPoses = PetPosePlanner.WorkPoses(characterId, poses);
-                _workScheduler.RebuildRhythm(changedWorkPoses, now);
+                _workScheduler.RebuildRhythm(workPoses, now);
+            }
+            else if (swampedChanged)
+            {
+                _workScheduler.RebuildRhythm(workPoses, now);
             }
 
             if (!animationsEnabled && _isDragging)
@@ -128,12 +166,33 @@ namespace HanaDesktopPet.Core
 
             string toolName = state.AppConnected ? activity.ToolName : null;
             PetMood? mood = _moodTracker.Update(status, toolName, hint, activity.LastActivityAt, now);
+            bool semanticTool = status == "tool" && PetPosePlanner.IsSemanticToolPose(toolName);
+            bool completionBlocked = hint != null || status == "error" || drawingActive || _isDragging;
+            PetNoticeTick noticeTick = _noticeCenter.Update(
+                state.DisplayNotifications, noticesEnabled, completionBlocked, now, wallNowMs,
+                state.DisplayFollowMode);
+            bool completionNotice = noticeTick.Presentation != null && noticeTick.Presentation.Kind == "completion";
+
             string preferredPose = PetPosePlanner.PreferredPose(status, toolName, hint);
             string workPose = PetPosePlanner.Resolve(preferredPose, poses);
             string realPose;
             bool fallback;
             bool hasPriorityState;
-            if (hint == null && mood.HasValue)
+            if (hint == null && status != "error" && drawingActive)
+            {
+                // The drawing call has returned, but its display hold is still running.
+                // This is artwork only; status, running and the work clock are untouched.
+                realPose = PetPosePlanner.Resolve("drawing", poses);
+                fallback = realPose != "drawing";
+                hasPriorityState = true;
+            }
+            else if (hint == null && status != "error" && completionNotice)
+            {
+                realPose = PetPosePlanner.Resolve("happy", poses);
+                fallback = realPose != "happy";
+                hasPriorityState = true;
+            }
+            else if (hint == null && !semanticTool && mood.HasValue)
             {
                 realPose = PetMoodPoseResolver.Resolve(mood.Value, workPose, poses);
                 fallback = realPose != PetMoodPoseResolver.PrimaryPose(mood.Value);
@@ -146,7 +205,6 @@ namespace HanaDesktopPet.Core
                 hasPriorityState = false;
             }
 
-            WorkPoseSet workPoses = PetPosePlanner.WorkPoses(characterId, poses);
             SchedulerTick workTick = _workScheduler.Update(
                 sessionId,
                 _moodTracker.ContinuousWorkStart,
@@ -165,12 +223,28 @@ namespace HanaDesktopPet.Core
             bool pickUpOwnsArtwork = _isDragging && pickUpPose != null;
             string displayedPose = pickUpOwnsArtwork ? pickUpPose : basePose;
 
+            // The bubble is resolved from the pose that is actually on screen, so no session
+            // or tool detail ever reaches it. Notices still come from the notice centre.
+            PetBubbleContent bubble = null;
+            if (_subtitle != null)
+            {
+                _subtitleFrame = _subtitle.Update(displayedPose, characterId, noticeTick.Presentation,
+                    pickUpOwnsArtwork, noticesEnabled, now);
+                bubble = _subtitleFrame.Content;
+            }
+            else if (noticeTick.Presentation != null && noticeTick.Presentation.BubbleVisible)
+            {
+                bubble = new PetBubbleContent(noticeTick.Presentation.Id, PetBubbleStyle.Notice,
+                    noticeTick.Presentation.Title, noticeTick.Presentation.Status);
+            }
+
             IList<PetPoseLayer> layers = _timeline.Update(
                 status,
                 displayedPose,
                 poses,
                 reduceMotion,
-                animationsEnabled && (!mood.HasValue || mood.Value != PetMood.Sleeping) && hint == null && !pickUpOwnsArtwork,
+                animationsEnabled && (!mood.HasValue || mood.Value != PetMood.Sleeping) && hint == null &&
+                    !pickUpOwnsArtwork && !drawingActive && !completionNotice,
                 hint,
                 pickUpOwnsArtwork,
                 now);
@@ -183,6 +257,9 @@ namespace HanaDesktopPet.Core
                 AddDeadline(deadlines, _moodTracker.NextDeadline(now));
                 AddDeadline(deadlines, _workScheduler.NextDeadline(now));
                 AddDeadline(deadlines, _pickUp.NextDeadline(now, reduceMotion));
+                AddDeadline(deadlines, _spotlightHold.NextDeadline(now));
+                AddDeadline(deadlines, _noticeCenter.NextDeadline(now));
+                if (_subtitleFrame != null) AddDeadline(deadlines, _subtitleFrame.NextDeadline);
                 if (deadlines.Count > 0) nextWakeAt = deadlines.Min();
             }
 
@@ -194,7 +271,7 @@ namespace HanaDesktopPet.Core
                 targetFallback = false;
 
             return new PetRenderFrame(characterId, targetPose, !pickUpOwnsArtwork && targetFallback,
-                new List<PetPoseLayer>(layers).AsReadOnly(), nextWakeAt);
+                new List<PetPoseLayer>(layers).AsReadOnly(), nextWakeAt, noticeTick.Presentation, bubble);
         }
 
         public void Tap(double nowSeconds)

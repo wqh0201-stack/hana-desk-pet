@@ -217,7 +217,7 @@ test("the stage headline is the role name, not the session title", async () => {
 test("a validated readback supplies the name, the image and the pose label together", async () => {
   const panel = await mountPanel(makeStore({
     "hana-pet.bridge.status": { status: "connected", reason: null, poseState: {
-      schemaVersion: 3, characterId: "claude", pose: "reading-2", fallback: false, since: Date.now() - 5000, revision: 12,
+      schemaVersion: 4, characterId: "claude", pose: "reading-2", fallback: false, since: Date.now() - 5000, revision: 12,
     } },
     "hana-pet.selection": { characterId: "deepseek", updatedAt: 1, petRevision: 0 },
   }));
@@ -263,7 +263,7 @@ test("a tool success never claims the run ended; an ended run may", async () => 
 test("a fallback readback is labelled as a substitute pose and keeps raw fields in diagnostics", async () => {
   const panel = await mountPanel(makeStore({
     "hana-pet.bridge.status": { status: "connected", reason: null, poseState: {
-      schemaVersion: 3, characterId: "glm", pose: "sleeping", fallback: true, since: 1700000000000, revision: 33,
+      schemaVersion: 4, characterId: "glm", pose: "sleeping", fallback: true, since: 1700000000000, revision: 33,
     } },
   }));
   assert.equal(panel.hidden("pose-fallback"), false);
@@ -351,7 +351,7 @@ test("a pinned target is marked as pinned, not merely followed", async () => {
 test("visible text never exposes raw pose ids; diagnostics still locate the exact image", async () => {
   const panel = await mountPanel(makeStore({
     "hana-pet.bridge.status": { status: "connected", reason: null, poseState: {
-      schemaVersion: 3, characterId: "claude", pose: "happy-2", fallback: false, since: Date.now(), revision: 3,
+      schemaVersion: 4, characterId: "claude", pose: "happy-2", fallback: false, since: Date.now(), revision: 3,
     } },
   }));
   const visible = ["role-title", "follow-target", "agent", "activity-status", "pose-name", "pose-connection"]
@@ -367,7 +367,7 @@ test("every catalogued pose the panel accepts has a Chinese label or a neutral o
   for (const roleId of Object.keys(POSE_INDEX.roles)) {
     for (const pose of POSE_INDEX.roles[roleId]) {
       panel.store["hana-pet.bridge.status"] = { status: "connected", reason: null, poseState: {
-        schemaVersion: 3, characterId: roleId, pose, fallback: false, since: Date.now(), revision: 1,
+        schemaVersion: 4, characterId: roleId, pose, fallback: false, since: Date.now(), revision: 1,
       } };
       await panel.pushStorage(["hana-pet.bridge.status"]);
       labels.add(panel.text("pose-name"));

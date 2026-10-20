@@ -14,7 +14,7 @@ const HOLD_MS = 2500;
 /** 与 .sessions 的 gap 保持一致，用于把列表高度对齐到整行。 */
 const SESSION_ROW_GAP = 3;
 const FOLLOW_OPTION_MAX = 15;
-const POSE_SCHEMA_VERSION = 3;
+const POSE_SCHEMA_VERSION = 4;
 const BRIDGE_REASONS = new Set(["unreachable", "version_mismatch", "invalid_response"]);
 const BRIDGE_REASON_LABELS = {
   unreachable: "桌宠没在运行，请打开它。",
@@ -73,15 +73,15 @@ const ROLES = [
 const CONNECTION_STATUSES = new Set(["disabled", "connecting", "connected", "offline"]);
 /**
  * 静态白名单下载地址。只允许打开这里定义的入口，面板不提供任意 URL。
- * Windows 指向约定的 windows-0.2.0 Release；该 Release 是否已上线由发布方核对，
+ * 指向协议 v4 的配套桌宠（Windows 0.3.0 / macOS 0.5.9）；附件是否已上线由发布方核对，
  * 代码不预先假定它能下载。
  */
 const PET_DOWNLOADS = Object.freeze({
   windows: Object.freeze({
-    url: "https://github.com/wqh0201-stack/hana-desk-pet/releases/download/windows-0.2.0/HanaDesktopPet-windows-0.2.0-portable.zip",
+    url: "https://github.com/wqh0201-stack/hana-desk-pet/releases/download/windows-0.3.0/HanaDesktopPet-windows-0.3.0-portable.zip",
   }),
   mac: Object.freeze({
-    url: "https://github.com/wqh0201-stack/hana-desk-pet/releases/download/console-0.6.5/HanaDesktopPet-crosspet-v0.5.8-local.zip",
+    url: "https://github.com/wqh0201-stack/hana-desk-pet/releases/download/pet-0.5.9/HanaDesktopPet-crosspet-v0.5.9-local.zip",
   }),
 });
 /**

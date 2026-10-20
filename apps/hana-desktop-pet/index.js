@@ -440,7 +440,30 @@ export default defineApp(async (sdk) => {
     }).follow;
     const next = JSON.stringify(followStorageValue(follow));
     if (next !== previous) await sdk.storage.global.set(FOLLOW_KEY, followStorageValue(follow));
+    // This must run on every follow refresh, not only when the scope changes: a
+    // completion can happen while a session is already outside the bound scope.
+    await retireOutOfScopeCompletions();
     return wasPinned && follow.mode !== "pinned";
+  }
+
+  /**
+   * A completion outside the current notice scope is retired immediately. Without
+   * this, a B completion produced while A is bound would survive until unbind and
+   * then be reported for the first time; it was never in scope, so it must stay gone.
+   * The bound session's own completion is always kept.
+   */
+  async function retireOutOfScopeCompletions() {
+    const pinned = follow.mode === "pinned" ? cleanId(follow.pinnedSessionId) : null;
+    let changed = false;
+    const sessions = snapshot.sessions.map((item) => {
+      if (!item || !(item.lastRunEndedAt > 0)) return item;
+      if (!pinned || item.sessionId === pinned) return item;
+      changed = true;
+      return { ...item, lastRunEndedAt: 0 };
+    });
+    if (!changed) return;
+    snapshot = { ...snapshot, sessions };
+    await sdk.storage.global.set(SNAPSHOT_KEY, snapshot);
   }
 
   /** Re-resolve `current` after follow changes; a one-shot bypass honors changed intent. */
@@ -691,7 +714,10 @@ export default defineApp(async (sdk) => {
       }
       const remoteSelection = await bridgeClient.getSelection();
       await syncSelection(remoteSelection);
-      await bridgeClient.publish(toPetSnapshot(snapshot, Date.now()));
+      await bridgeClient.publish(toPetSnapshot(snapshot, Date.now(), {
+        followMode: follow.mode,
+        pinnedSessionId: follow.pinnedSessionId,
+      }));
       const poseState = await bridgeClient.getPoseState();
       await setBridgeStatus("connected", { poseState });
     } catch (error) {

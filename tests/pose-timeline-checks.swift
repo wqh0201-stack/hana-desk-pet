@@ -281,7 +281,8 @@ struct PetPoseTimelineChecks {
         expect(interrupted == [PetPoseLayer(poseName: "compact", opacity: 1)], "pointer interaction interrupts the transition at the current hint")
         expect(!timeline.isTransitioning && !timeline.hasActiveReaction, "pointer interaction leaves the timeline responsive")
 
-        expect(PetPosePlanner.preferredPose(for: .error, toolName: nil, hint: .confirming) == "oops", "error short feedback outranks a pending hint")
+        expect(PetPosePlanner.preferredPose(for: .error, toolName: nil, hint: .compacting) == "oops", "error short feedback outranks the lower-priority hints")
+        expect(PetPosePlanner.preferredPose(for: .error, toolName: nil, hint: .confirming) == "asking", "a pending confirmation outranks even an error")
         _ = timeline.update(status: .error, basePose: "oops", availablePoseNames: poses, hint: nil, at: 2)
         expect(timeline.advance(at: 4.499) == [PetPoseLayer(poseName: "oops", opacity: 1)], "error art remains visible during the host short-feedback interval")
         let restored = timeline.update(

@@ -51,9 +51,9 @@
 
 会话类调用失败时，App 只把稳定的 `code` / `kind` / `operation` / `selector`（`id` / `path` / `legacyPath`）与几个布尔标志（`eventHasSessionId` / `listHasPath` / `pathResolvedFromList` / `legacyPathTried`，以及枚举 `pathMatch`: `exact` / `basename` / `miss`）写进 `hana-pet.session-diagnostics`，绝不存 message、会话 id、路径或正文。
 
-## 宿主事件驱动的表现（协议 v3）
+## 宿主事件驱动的表现（协议 v4）
 
-`PetActivity.hint` 是 v3 唯一新增字段，取值只能是 `confirming` / `compacting` / `interrupted` 或 `null`。
+`PetActivity.hint` 是 v3 引入、v4 继续沿用的字段，取值只能是 `confirming` / `compacting` / `interrupted` 或 `null`。v4 另外新增了 `followMode`、`concurrentSessions`、`notifications` 与 `spotlight`；它们都是可选字段，缺省时按安全值处理，但字段一旦出现就严格校验。
 
 | hint | 来源 | 清除 |
 |---|---|---|
@@ -83,7 +83,7 @@
 - 诊断记录（`hana-pet.session-diagnostics`）只存 `code` / `kind` / `operation` / `selector` / `pathMatch` 五个枚举与四个布尔标志，不存 message、会话 id 或路径。
 - 跟随选择（`hana-pet.follow`）只存 mode / 会话 ID / 时间戳与回落原因；释放提示是临时 UI 上下文，超时后不再保留。
 - `network.allowedHosts` 只含 `127.0.0.1`，`allowLocalhost` 显式开启；仅用 `GET/POST`。Bridge 默认关闭，固定地址位于 `pet-bridge.mjs`，桌宠端绑定 `127.0.0.1:43127`。App 后台的网络访问只限于这条本机回环：会话内容不上传、不转发到任何远端。你点击下载入口时，是由系统浏览器去访问 GitHub Release 页面，不是 App 自己发请求。
-- Bridge 仅使用 v3 `/v3/*` 路由与 `schemaVersion: 3`。v2 及更早的旧 peer 不再受理（握手与 schema 双向 fail closed）；新 Pet 只接受本机固定目录，不允许 Hana DTO 覆写角色集合。
+- Bridge 仅使用 v4 `/v4/*` 路由与 `schemaVersion: 4`。v3 及更早的旧 peer 不再受理（握手与 schema 双向 fail closed）；新 Pet 只接受本机固定目录，不允许 Hana DTO 覆写角色集合。
 - 角色选择、Bridge 开关和活动快照各自保存在 App 的 global storage。事件处理和发往宠物的数据都不包含聊天正文、工具参数/结果、sessionPath 或凭据；活动事件不能更改角色。
 - 不申请 runtime、Hana window、local-machine、usage、model 权限；不访问已安装 CrossPet。
 

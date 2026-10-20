@@ -16,7 +16,7 @@ Windows 10 1903 或更新的 x64 系统、Windows 11 x64。需要 .NET Framework
 
 ## 连接 Hana
 
-打开 Hana 的「桌宠控制台」App，启用「本机桌宠连接」。桌宠在 `127.0.0.1:43127` 提供本机回环接口（协议 v3），只监听本机回环地址，不需要再装别的插件。
+打开 Hana 的「桌宠控制台」App，启用「本机桌宠连接」。桌宠在 `127.0.0.1:43127` 提供本机回环接口（协议 v4），只监听本机回环地址，不需要再装别的插件。
 
 - **单击**角色：开心一下
 - **按住拖动**：拎起来移动，松手落地
@@ -34,7 +34,7 @@ Windows 10 1903 或更新的 x64 系统、Windows 11 x64。需要 .NET Framework
 | 现象 | 处理 |
 | --- | --- |
 | 双击没反应 | 同一个用户只能运行一个实例。先在任务管理器确认没有残留的 `HanaDesktopPet.exe`。 |
-| 控制台连不上 | 确认端口没被占用；`curl http://127.0.0.1:43127/v3/hello` 应返回 `{"service":"hana-desktop-pet","protocolVersion":3}`。 |
+| 控制台连不上 | 确认端口没被占用；`curl http://127.0.0.1:43127/v4/hello` 应返回 `{"service":"hana-desktop-pet","protocolVersion":4}`。 |
 | 角色不显示 | 右键换一个角色。仍然空白时看「事件查看器 → Windows 日志 → 应用程序」。 |
 | 想彻底重置 | 退出桌宠后删除 `%LOCALAPPDATA%\HanaDesktopPet`。 |
 

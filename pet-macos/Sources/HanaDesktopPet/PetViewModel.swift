@@ -5,6 +5,7 @@ final class PetViewModel {
     private(set) var state: PetViewState
     private(set) var listenerStatus = "starting"
     private(set) var positionLocked: Bool
+    private(set) var showNotices: Bool
     var onChange: (() -> Void)?
 
     let store: PetStateStore
@@ -13,6 +14,7 @@ final class PetViewModel {
         self.store = store
         self.state = store.viewState()
         self.positionLocked = UserDefaults.standard.bool(forKey: PetPreferences.positionLockKey)
+        self.showNotices = PetPreferences.loadShowNotices()
     }
 
     func refreshFromServer() {
@@ -46,10 +48,18 @@ final class PetViewModel {
         UserDefaults.standard.set(locked, forKey: PetPreferences.positionLockKey)
         onChange?()
     }
+
+    func setShowNotices(_ enabled: Bool) {
+        guard showNotices != enabled else { return }
+        showNotices = enabled
+        PetPreferences.saveShowNotices(enabled)
+        onChange?()
+    }
 }
 
 enum PetPreferences {
     static let positionLockKey = "hana-desktop-pet.position-locked"
+    static let showNoticesKey = "hana-desktop-pet.show-notices"
     private static let idKey = "hana-desktop-pet.selected-character"
     private static let revisionKey = "hana-desktop-pet.selection-revision"
     private static let updatedAtKey = "hana-desktop-pet.selection-updated-at"
@@ -72,5 +82,16 @@ enum PetPreferences {
         defaults.set(selection.characterId, forKey: idKey)
         defaults.set(selection.revision, forKey: revisionKey)
         defaults.set(selection.updatedAt, forKey: updatedAtKey)
+    }
+
+    /// Bubbles are on by default; only an explicit stored `false` turns them off.
+    static func loadShowNotices() -> Bool {
+        let defaults = UserDefaults.standard
+        guard defaults.object(forKey: showNoticesKey) != nil else { return true }
+        return defaults.bool(forKey: showNoticesKey)
+    }
+
+    static func saveShowNotices(_ enabled: Bool) {
+        UserDefaults.standard.set(enabled, forKey: showNoticesKey)
     }
 }

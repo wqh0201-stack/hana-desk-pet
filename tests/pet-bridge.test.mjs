@@ -19,7 +19,7 @@ function response(status, data, overrides = {}) {
     status,
     ok: status >= 200 && status < 300,
     redirected: false,
-    url: `${PET_BASE_URL}/v3/test`,
+    url: `${PET_BASE_URL}/v4/test`,
     async json() { return data; },
     ...overrides,
   };
@@ -51,15 +51,21 @@ test("pet projection is a strict metadata allowlist and publishes seven manual c
     prompt: "secret prompt",
   }, 5000);
 
-  assert.equal(PET_PROTOCOL_VERSION, 3);
-  assert.equal(PET_SCHEMA_VERSION, 3);
-  assert.deepEqual(Object.keys(dto).sort(), ["activity", "characters", "revision", "schemaVersion"].sort());
+  assert.equal(PET_PROTOCOL_VERSION, 4);
+  assert.equal(PET_SCHEMA_VERSION, 4);
+  assert.deepEqual(Object.keys(dto).sort(), [
+    "activity", "characters", "concurrentSessions", "followMode", "notifications", "revision", "schemaVersion",
+  ].sort());
   assert.equal(dto.schemaVersion, PET_SCHEMA_VERSION);
   assert.deepEqual(Object.keys(dto.activity).sort(), [
-    "agentId", "agentName", "hint", "lastActivityAt", "sessionId", "status", "title", "toolName",
+    "agentId", "agentName", "hint", "lastActivityAt", "sessionId", "spotlight", "status", "title", "toolName",
   ].sort());
   assert.equal(dto.activity.status, "tool");
   assert.equal(dto.activity.title, "代码联调");
+  assert.equal(dto.activity.spotlight, null);
+  assert.equal(dto.followMode, "latest");
+  assert.equal(dto.concurrentSessions, 0);
+  assert.deepEqual(dto.notifications, []);
   assert.deepEqual(dto.characters, PET_CATALOG.map(({ id, name }) => ({ id, name })));
   assert.deepEqual(PET_CATALOG.map(({ id }) => id), [
     "claude", "gpt", "deepseek", "gemini", "glm", "deepseek-hoodie", "gpt-onesie",
@@ -82,10 +88,14 @@ test("short outcomes overlay active work, then restore working/tool/idle without
     sessionId: "s1", status: "success", statusAt: 1000, running: true,
     toolName: null, lastActivityAt: 1000,
   } }, 3501);
-  const resumedTool = toPetSnapshot({ current: {
+  const heldError = toPetSnapshot({ current: {
     sessionId: "s1", status: "error", statusAt: 1000, running: true,
     toolName: "file.read", lastActivityAt: 1000,
   } }, 3501);
+  const resumedTool = toPetSnapshot({ current: {
+    sessionId: "s1", status: "error", statusAt: 1000, running: true,
+    toolName: "file.read", lastActivityAt: 1000,
+  } }, 5001);
   const terminalRecent = toPetSnapshot({ current: {
     sessionId: "s1", status: "success", statusAt: 1000, running: false,
     lastActivityAt: 1000,
@@ -97,6 +107,7 @@ test("short outcomes overlay active work, then restore working/tool/idle without
 
   assert.equal(toolFeedback.activity.status, "success");
   assert.equal(resumedWork.activity.status, "working");
+  assert.equal(heldError.activity.status, "error", "the 4 s error hold is still visible");
   assert.equal(resumedTool.activity.status, "tool");
   assert.equal(resumedTool.activity.toolName, "file.read");
   assert.equal(terminalRecent.activity.status, "success");
@@ -131,22 +142,22 @@ test("client uses fixed loopback routes and requires the v2 peer protocol", asyn
   const calls = [];
   const client = new PetBridgeClient(async (url, init) => {
     calls.push({ url, init });
-    if (url.endsWith("/v3/hello")) {
-      return response(200, { service: "hana-desktop-pet", protocolVersion: 3 }, { url });
+    if (url.endsWith("/v4/hello")) {
+      return response(200, { service: "hana-desktop-pet", protocolVersion: 4 }, { url });
     }
-    if (url.endsWith("/v3/snapshot")) {
-      return response(200, { schemaVersion: 3, accepted: true }, { url });
+    if (url.endsWith("/v4/snapshot")) {
+      return response(200, { schemaVersion: 4, accepted: true }, { url });
     }
-    return response(200, { schemaVersion: 3, characterId: "claude", revision: 0, updatedAt: 0 }, { url });
+    return response(200, { schemaVersion: 4, characterId: "claude", revision: 0, updatedAt: 0 }, { url });
   });
 
   assert.equal(await client.probe(), true);
   await client.publish(toPetSnapshot({}, 100));
   await client.getSelection();
-  assert.ok(calls.every(({ url }) => url.startsWith(`${PET_BASE_URL}/v3/`)));
+  assert.ok(calls.every(({ url }) => url.startsWith(`${PET_BASE_URL}/v4/`)));
   assert.ok(calls.every(({ init }) => init.redirect === "error"));
   assert.equal(calls[1].init.method, "POST");
-  assert.equal(JSON.parse(calls[1].init.body).schemaVersion, 3);
+  assert.equal(JSON.parse(calls[1].init.body).schemaVersion, 4);
 
   const legacyPeer = new PetBridgeClient(async (url) => response(200, {
     service: "hana-desktop-pet", protocolVersion: 1,
@@ -154,7 +165,7 @@ test("client uses fixed loopback routes and requires the v2 peer protocol", asyn
   await assert.rejects(legacyPeer.probe(), /PET_SERVICE_MISMATCH/);
 
   const mismatch = new PetBridgeClient(async (url) => response(200, {
-    service: "other-local-process", protocolVersion: 3,
+    service: "other-local-process", protocolVersion: 4,
   }, { url }));
   await assert.rejects(mismatch.probe(), /PET_SERVICE_MISMATCH/);
 
@@ -167,19 +178,19 @@ test("client uses fixed loopback routes and requires the v2 peer protocol", asyn
   assert.throws(() => new PetBridgeClient(async () => {}, { baseUrl: "http://127.0.0.1:9999" }), /PET_ENDPOINT_MUST_BE_LOOPBACK/);
 });
 
-test("selection writes use v3 expected revisions and conflicts return validated v3 selection", async () => {
+test("selection writes use v4 expected revisions and conflicts return validated v4 selection", async () => {
   let captured;
   const client = new PetBridgeClient(async (url, init) => {
     captured = { url, init };
     return response(409, {
-      selection: { schemaVersion: 3, characterId: "deepseek-hoodie", revision: 8, updatedAt: 900 },
+      selection: { schemaVersion: 4, characterId: "deepseek-hoodie", revision: 8, updatedAt: 900 },
     }, { url });
   });
   const result = await client.setSelection({ characterId: "gpt-onesie", updatedAt: 950 }, 7);
-  assert.equal(captured.url, `${PET_BASE_URL}/v3/selection`);
+  assert.equal(captured.url, `${PET_BASE_URL}/v4/selection`);
   assert.equal(captured.init.method, "POST");
   assert.deepEqual(JSON.parse(captured.init.body), {
-    schemaVersion: 3,
+    schemaVersion: 4,
     characterId: "gpt-onesie",
     expectedRevision: 7,
     updatedAt: 950,
@@ -231,4 +242,115 @@ test("a diagnostic keeps only enums: code, kind, operation and an optional selec
   }
 
   assert.deepEqual(createSessionDiagnostics(), { schemaVersion: 1, observedAt: 0, list: null, get: null });
+});
+
+function syntheticSession(overrides = {}) {
+  return {
+    sessionId: "session-a",
+    displayTitle: "甲",
+    title: "甲",
+    running: false,
+    runEnded: true,
+    status: "success",
+    statusAt: 1000,
+    lastRunEndedAt: 1000,
+    lastActivityAt: 1000,
+    closedAt: 0,
+    hint: null,
+    hintAt: 0,
+    unresolved: false,
+    ...overrides,
+  };
+}
+
+test("the v4 projection carries bounded follow, concurrency and notice metadata", () => {
+  const ended = syntheticSession({ sessionId: "session-a", displayTitle: "甲" });
+  const confirming = syntheticSession({
+    sessionId: "session-b", displayTitle: "乙", running: true, runEnded: false,
+    status: "working", statusAt: 2000, lastRunEndedAt: 0, lastActivityAt: 2000,
+    hint: "confirming", hintAt: 2100,
+  });
+  const placeholder = syntheticSession({
+    sessionId: "unresolved:abc12345", running: true, status: "working",
+    lastActivityAt: 2000, lastRunEndedAt: 0, unresolved: true,
+  });
+  const snapshot = { sessions: [ended, confirming, placeholder], current: confirming };
+
+  const latest = toPetSnapshot(snapshot, 3000, { followMode: "latest" });
+  assert.equal(latest.followMode, "latest");
+  assert.equal(latest.concurrentSessions, 1, "only the real running session is counted");
+  assert.deepEqual(latest.notifications.map((item) => item.kind), ["confirmation", "completion"]);
+  assert.equal(latest.notifications[0].title, "乙");
+  assert.equal(latest.notifications[1].title, "甲");
+  assert.ok(latest.notifications.every((item) => /^(confirmation|completion):[0-9a-f]{8}:\d+$/.test(item.id)));
+
+  const pinnedB = toPetSnapshot(snapshot, 3000, { followMode: "pinned", pinnedSessionId: "session-b" });
+  assert.equal(pinnedB.followMode, "pinned");
+  assert.deepEqual(pinnedB.notifications.map((item) => item.kind), ["confirmation"],
+    "a bound pet only notifies the bound conversation");
+
+  const pinnedA = toPetSnapshot(snapshot, 3000, { followMode: "pinned", pinnedSessionId: "session-a" });
+  assert.deepEqual(pinnedA.notifications.map((item) => item.kind), ["completion"]);
+
+  const pinnedMissing = toPetSnapshot(snapshot, 3000, { followMode: "pinned", pinnedSessionId: "session-gone" });
+  assert.deepEqual(pinnedMissing.notifications, []);
+
+  const serialized = JSON.stringify(latest);
+  for (const leak of ["secret", "/private", "args", "result", "prompt"]) {
+    assert.equal(serialized.includes(leak), false, `the v4 projection leaks ${leak}`);
+  }
+});
+
+test("completion notices expire, dedupe and never replace a pending confirmation", () => {
+  const ended = syntheticSession({ sessionId: "session-a", displayTitle: "甲" });
+  const confirming = syntheticSession({
+    sessionId: "session-b", displayTitle: "乙", running: true, runEnded: false,
+    status: "working", statusAt: 2000, lastRunEndedAt: 0, lastActivityAt: 2000,
+    hint: "confirming", hintAt: 2100,
+  });
+  const duplicate = { ...ended };
+  const snapshot = { sessions: [ended, duplicate, confirming], current: confirming };
+
+  const fresh = toPetSnapshot(snapshot, 3000, { followMode: "latest" });
+  assert.equal(fresh.notifications.filter((item) => item.kind === "completion").length, 1,
+    "a duplicated row cannot duplicate the notice");
+
+  const expired = toPetSnapshot(snapshot, 1000 + 20001, { followMode: "latest" });
+  assert.equal(expired.notifications.filter((item) => item.kind === "completion").length, 0,
+    "an old completion is history");
+  assert.equal(expired.notifications.filter((item) => item.kind === "confirmation").length, 1,
+    "the still-pending confirmation remains");
+
+  const closed = syntheticSession({
+    sessionId: "session-c", closedAt: 2000, lastActivityAt: 1000,
+  });
+  const closedDto = toPetSnapshot({ sessions: [closed], current: closed }, 3000, { followMode: "latest" });
+  assert.deepEqual(closedDto.notifications, [], "a closed session raises nothing");
+
+  const staleHint = syntheticSession({
+    sessionId: "session-d", running: true, status: "working", lastActivityAt: 2000,
+    lastRunEndedAt: 0, hint: "confirming", hintAt: 1000,
+  });
+  const staleDto = toPetSnapshot({ sessions: [staleHint], current: staleHint }, 1000 + 600001, { followMode: "latest" });
+  assert.deepEqual(staleDto.notifications, [], "an expired hint is not a live confirmation");
+});
+
+test("the drawing spotlight is a display marker bounded by its own TTL", () => {
+  const drawing = syntheticSession({
+    sessionId: "session-draw", running: true, runEnded: false, status: "working",
+    statusAt: 1000, lastRunEndedAt: 0, lastActivityAt: 1000, drawingAt: 1000,
+  });
+  const fresh = toPetSnapshot({ sessions: [drawing], current: drawing }, 2000);
+  assert.deepEqual(fresh.activity.spotlight, { kind: "drawing", at: 1000 });
+  assert.equal(fresh.activity.status, "working", "the marker never changes the real status");
+
+  const expired = toPetSnapshot({ sessions: [drawing], current: drawing }, 1000 + 30001);
+  assert.equal(expired.activity.spotlight, null);
+
+  const future = syntheticSession({ ...drawing, drawingAt: 9000 });
+  assert.equal(toPetSnapshot({ sessions: [future], current: future }, 2000).activity.spotlight, null,
+    "a future timestamp is not trusted");
+
+  const closed = syntheticSession({ ...drawing, closedAt: 2000, lastActivityAt: 1000 });
+  assert.equal(toPetSnapshot({ sessions: [closed], current: closed }, 2000).activity.spotlight, null);
 });

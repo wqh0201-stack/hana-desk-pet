@@ -401,8 +401,10 @@ private struct PoseWorkSchedulerChecks {
             at: 9.1
         )
         expect(error.pose == nil && error.nextDeadline == nil, "error and hint are never covered by a rhythm or grace")
-        expect(PetPosePlanner.preferredPose(for: .error, toolName: "read_file", hint: .confirming) == "oops",
-               "the planner still ranks error above a concurrent hint")
+        expect(PetPosePlanner.preferredPose(for: .error, toolName: "read_file", hint: .compacting) == "oops",
+               "the planner still ranks error above the lower-priority hints")
+        expect(PetPosePlanner.preferredPose(for: .error, toolName: "read_file", hint: .confirming) == "asking",
+               "a pending confirmation outranks even an error")
 
         let success = scheduler.update(
             input(status: .success, hasPriorityState: true, realPose: "happy"),

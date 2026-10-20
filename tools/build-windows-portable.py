@@ -25,6 +25,7 @@ import argparse
 import hashlib
 import json
 import pathlib
+import re
 import shutil
 import subprocess
 import sys
@@ -45,8 +46,26 @@ DOCUMENTS = ["README.md", "LICENSE"]
 CROSSPET_DOCUMENTS = ["ATTRIBUTION.md", "CHARACTERS-LICENSE.md"]
 
 
-def read_version(source: pathlib.Path) -> str:
-    return json.loads((source / "version.json").read_text(encoding="utf-8"))["version"]
+def read_version_metadata(source: pathlib.Path):
+    """version.json is the only place the candidate version and protocol are declared."""
+    document = json.loads((source / "version.json").read_text(encoding="utf-8"))
+    return document["version"], int(document["protocolVersion"])
+
+
+def verify_protocol_matches_sources(source: pathlib.Path, protocol: int):
+    """Fail the build when version.json and the C# protocol constant disagree.
+
+    The executable has no sidecar metadata at runtime, so the C# constant cannot be
+    derived from version.json; a guard keeps the two from drifting apart instead.
+    """
+    api = (source / "HanaDesktopPet.Core" / "Protocol" / "PetAPI.cs").read_text(encoding="utf-8-sig")
+    matches = re.findall(r"protocolVersion\s*=\s*(\d+)", api)
+    if not matches:
+        raise SystemExit("PetAPI.cs no longer declares protocolVersion; update this guard")
+    declared = sorted(set(int(value) for value in matches))
+    if declared != [protocol]:
+        raise SystemExit("version.json says protocol {0} but PetAPI.cs declares {1}".format(
+            protocol, ", ".join(str(value) for value in declared)))
 
 
 def require_travel_documents(source: pathlib.Path, assets: pathlib.Path):
@@ -72,6 +91,12 @@ def catalog_entries(assets: pathlib.Path):
                          + "\nrun: node tools/package-windows-pet.mjs --prepare-assets")
     catalog = json.loads(catalog_path.read_text(encoding="utf-8"))
     entries = [("catalog.json", catalog_path)]
+    # The subtitle table is a native-layer resource; it rides in the same blob so the
+    # single-file build needs no sibling file and no protocol change.
+    lines_path = artwork / "pet-lines.json"
+    if not lines_path.is_file():
+        raise SystemExit("missing prepared subtitle table: " + str(lines_path))
+    entries.append(("pet-lines.json", lines_path))
     for character in catalog["characters"]:
         directory = character["assetDirectory"]
         for name in character["poseFiles"]:
@@ -179,7 +204,7 @@ def run_asset_check(exe: pathlib.Path):
 
 
 def build_zip(exe: pathlib.Path, source: pathlib.Path, assets: pathlib.Path,
-              output: pathlib.Path, version: str):
+              output: pathlib.Path, version: str, protocol: int):
     with zipfile.ZipFile(output, "w", zipfile.ZIP_DEFLATED, compresslevel=6) as archive:
         archive.write(exe, exe.name)
         for path in require_travel_documents(source, assets):
@@ -189,7 +214,7 @@ def build_zip(exe: pathlib.Path, source: pathlib.Path, assets: pathlib.Path,
             json.dumps(
                 {
                     "version": version,
-                    "protocolVersion": 3,
+                    "protocolVersion": protocol,
                     "target": "Windows 10 1903+ / Windows 11 x64",
                     "distribution": "single-file-portable",
                 },
@@ -201,7 +226,8 @@ def build_zip(exe: pathlib.Path, source: pathlib.Path, assets: pathlib.Path,
 
 
 def write_build_manifest(work: pathlib.Path, root: pathlib.Path, source: pathlib.Path,
-                         exe: pathlib.Path, version: str, artwork_count: int, artwork_bytes: int):
+                         exe: pathlib.Path, version: str, protocol: int,
+                         artwork_count: int, artwork_bytes: int):
     """Write a fresh manifest for THIS build; never rewrite the historical record.
 
     `pet-windows/package-manifest.json` ships inside the original standalone
@@ -226,7 +252,7 @@ def write_build_manifest(work: pathlib.Path, root: pathlib.Path, source: pathlib
         "schemaVersion": 1,
         "kind": "windows-single-file-build",
         "version": version,
-        "protocolVersion": 3,
+        "protocolVersion": protocol,
         "distribution": "single-file-portable",
         "sourceRoot": "pet-windows",
         "executable": {
@@ -257,7 +283,8 @@ def main() -> int:
     if not (source / "version.json").is_file():
         raise SystemExit("not a repository root: " + str(root))
 
-    version = read_version(source)
+    version, protocol = read_version_metadata(source)
+    verify_protocol_matches_sources(source, protocol)
     require_travel_documents(source, assets)
 
     work = root / WORK_DIR
@@ -283,10 +310,11 @@ def main() -> int:
 
     if not args.no_zip:
         archive = build_zip(exe, source, assets,
-                            dist / ("HanaDesktopPet-windows-{0}-portable.zip".format(version)), version)
+                            dist / ("HanaDesktopPet-windows-{0}-portable.zip".format(version)),
+                            version, protocol)
         print("zip: {0} ({1:.1f} MB)".format(archive.name, archive.stat().st_size / 1024 / 1024))
 
-    write_build_manifest(work, root, source, exe, version, count, total)
+    write_build_manifest(work, root, source, exe, version, protocol, count, total)
     return 0
 
 

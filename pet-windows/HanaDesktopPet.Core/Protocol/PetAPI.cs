@@ -22,21 +22,21 @@ namespace HanaDesktopPet.Core
 
         public PetHTTPResponse Handle(PetHTTPRequest request)
         {
-            if (request.Method == "GET" && request.Path == "/v3/hello")
-                return request.Body.Length == 0 ? Json(200, new { service = "hana-desktop-pet", protocolVersion = 3 }) : Json(400, new { error = "invalid_request" });
-            if (request.Method == "GET" && request.Path == "/v3/selection")
+            if (request.Method == "GET" && request.Path == "/v4/hello")
+                return request.Body.Length == 0 ? Json(200, new { service = "hana-desktop-pet", protocolVersion = 4 }) : Json(400, new { error = "invalid_request" });
+            if (request.Method == "GET" && request.Path == "/v4/selection")
                 return request.Body.Length == 0 ? Json(200, SelectionObject(store.CurrentSelection())) : Json(400, new { error = "invalid_request" });
-            if (request.Method == "GET" && request.Path == "/v3/state")
+            if (request.Method == "GET" && request.Path == "/v4/state")
                 return request.Body.Length == 0 ? Json(200, PoseObject(readback.Current())) : Json(400, new { error = "invalid_request" });
-            if (request.Method == "POST" && request.Path == "/v3/snapshot")
+            if (request.Method == "POST" && request.Path == "/v4/snapshot")
             {
                 if (!HasJsonContentType(request)) return Json(415, new { error = "json_required" });
                 try
                 {
                     PetSnapshotDTO snapshot = DecodeSnapshot(request.Body);
                     if (store.Ingest(snapshot) == SnapshotIngestResult.Accepted)
-                        return Json(200, new { schemaVersion = 3, accepted = true });
-                    return Json(409, new { schemaVersion = 3, accepted = false });
+                        return Json(200, new { schemaVersion = 4, accepted = true });
+                    return Json(409, new { schemaVersion = 4, accepted = false });
                 }
                 catch (Exception exception)
                 {
@@ -44,7 +44,7 @@ namespace HanaDesktopPet.Core
                     return Json(400, new { error = "invalid_snapshot" });
                 }
             }
-            if (request.Method == "POST" && request.Path == "/v3/selection")
+            if (request.Method == "POST" && request.Path == "/v4/selection")
             {
                 if (!HasJsonContentType(request)) return Json(415, new { error = "json_required" });
                 try
@@ -56,7 +56,7 @@ namespace HanaDesktopPet.Core
                     string characterId = RequiredText(value["characterId"], 48);
                     long expectedRevision = ReadInteger(value["expectedRevision"]);
                     long updatedAt = ReadInteger(value["updatedAt"]);
-                    if (schemaVersion != 3 || !ValidRoleId(characterId)) throw new InvalidDataException();
+                    if (schemaVersion != 4 || !ValidRoleId(characterId)) throw new InvalidDataException();
 
                     SelectionWriteResult result = store.WriteRemoteSelection(characterId, expectedRevision, updatedAt);
                     if (result.Kind == SelectionWriteResultKind.Updated)
@@ -71,8 +71,8 @@ namespace HanaDesktopPet.Core
                     return Json(400, new { error = "invalid_selection" });
                 }
             }
-            if (request.Path == "/v3/hello" || request.Path == "/v3/selection" ||
-                request.Path == "/v3/state" || request.Path == "/v3/snapshot")
+            if (request.Path == "/v4/hello" || request.Path == "/v4/selection" ||
+                request.Path == "/v4/state" || request.Path == "/v4/snapshot")
                 return Json(405, new { error = "method_not_allowed" });
             return Json(404, new { error = "not_found" });
         }
@@ -80,10 +80,25 @@ namespace HanaDesktopPet.Core
         private static PetSnapshotDTO DecodeSnapshot(byte[] body)
         {
             IDictionary<string, object> root = RequireObject(StrictJson.Parse(body),
-                new[] { "schemaVersion", "revision", "characters", "activity" },
+                new[] { "schemaVersion", "revision", "characters", "activity", "followMode", "concurrentSessions", "notifications" },
                 new[] { "schemaVersion", "revision", "characters", "activity" });
-            if (ReadInteger(root["schemaVersion"]) != 3) throw new InvalidDataException();
+            if (ReadInteger(root["schemaVersion"]) != 4) throw new InvalidDataException();
             long revision = ReadInteger(root["revision"]);
+
+            // New root fields are validated when present and default safely when absent.
+            // The console always sends them; hand-written synthetic snapshots need not.
+            string followMode = "latest";
+            object rawFollowMode;
+            if (root.TryGetValue("followMode", out rawFollowMode) && rawFollowMode != null)
+            {
+                followMode = RequiredText(rawFollowMode, 16);
+                if (followMode != "latest" && followMode != "pinned") throw new InvalidDataException();
+            }
+            long concurrentSessions = 0;
+            object rawConcurrent;
+            if (root.TryGetValue("concurrentSessions", out rawConcurrent) && rawConcurrent != null)
+                concurrentSessions = ReadInteger(rawConcurrent);
+            if (concurrentSessions > 32) throw new InvalidDataException();
 
             var rawCharacters = root["characters"] as ArrayList;
             if (rawCharacters == null || rawCharacters.Count != PetRole.BuiltIns.Count) throw new InvalidDataException();
@@ -99,7 +114,7 @@ namespace HanaDesktopPet.Core
             if (!roles.SequenceEqual(PetRole.BuiltIns)) throw new InvalidDataException();
 
             IDictionary<string, object> activityObject = RequireObject(root["activity"],
-                new[] { "sessionId", "title", "agentId", "agentName", "status", "toolName", "lastActivityAt", "hint" },
+                new[] { "sessionId", "title", "agentId", "agentName", "status", "toolName", "lastActivityAt", "hint", "spotlight" },
                 new[] { "status", "lastActivityAt" });
             string status = RequiredText(activityObject["status"], 16);
             if (status != "idle" && status != "working" && status != "tool" && status != "success" && status != "error")
@@ -109,6 +124,41 @@ namespace HanaDesktopPet.Core
             if (hint != null && hint != "confirming" && hint != "compacting" && hint != "interrupted")
                 throw new InvalidDataException();
 
+            PetSpotlight spotlight = null;
+            object rawSpotlight;
+            if (activityObject.TryGetValue("spotlight", out rawSpotlight) && rawSpotlight != null)
+            {
+                IDictionary<string, object> item = RequireObject(rawSpotlight, new[] { "kind", "at" }, new[] { "kind", "at" });
+                string kind = RequiredText(item["kind"], 16);
+                if (kind != "drawing") throw new InvalidDataException();
+                spotlight = new PetSpotlight(kind, ReadInteger(item["at"]));
+            }
+
+            var rawNotifications = new ArrayList();
+            object rawNotificationValue;
+            if (root.TryGetValue("notifications", out rawNotificationValue) && rawNotificationValue != null)
+            {
+                rawNotifications = rawNotificationValue as ArrayList;
+                if (rawNotifications == null) throw new InvalidDataException();
+            }
+            if (rawNotifications.Count > 8) throw new InvalidDataException();
+            var notifications = new List<PetNotice>();
+            var noticeIds = new HashSet<string>(StringComparer.Ordinal);
+            foreach (object rawNotice in rawNotifications)
+            {
+                IDictionary<string, object> item = RequireObject(rawNotice,
+                    new[] { "id", "kind", "sessionId", "title", "at" }, new[] { "id", "kind", "at" });
+                string id = RequiredText(item["id"], 96);
+                if (!ValidNoticeId(id) || !noticeIds.Add(id)) throw new InvalidDataException();
+                string kind = RequiredText(item["kind"], 16);
+                if (kind != "confirmation" && kind != "completion") throw new InvalidDataException();
+                long at = ReadInteger(item["at"]);
+                notifications.Add(new PetNotice(id, kind,
+                    OptionalField(item, "sessionId", 256),
+                    OptionalField(item, "title", 120),
+                    at));
+            }
+
             return new PetSnapshotDTO(revision, roles, new PetActivity(
                 OptionalField(activityObject, "sessionId", 256),
                 OptionalField(activityObject, "title", 120),
@@ -117,7 +167,8 @@ namespace HanaDesktopPet.Core
                 status,
                 OptionalField(activityObject, "toolName", 80),
                 lastActivityAt,
-                hint));
+                hint,
+                spotlight), followMode, (int)concurrentSessions, notifications.AsReadOnly());
         }
 
         private static IDictionary<string, object> RequireObject(object value, IEnumerable<string> allowed, IEnumerable<string> required)
@@ -168,6 +219,13 @@ namespace HanaDesktopPet.Core
                 (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '-');
         }
 
+        private static bool ValidNoticeId(string value)
+        {
+            return value.Length > 0 && value.Length <= 96 && value.All(c =>
+                (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') ||
+                c == '_' || c == '.' || c == ':' || c == '-');
+        }
+
         private static bool HasJsonContentType(PetHTTPRequest request)
         {
             foreach (KeyValuePair<string, string> header in request.Headers)
@@ -181,12 +239,12 @@ namespace HanaDesktopPet.Core
 
         private static object SelectionObject(PetSelection selection)
         {
-            return new { schemaVersion = 3, characterId = selection.CharacterId, revision = selection.Revision, updatedAt = selection.UpdatedAt };
+            return new { schemaVersion = 4, characterId = selection.CharacterId, revision = selection.Revision, updatedAt = selection.UpdatedAt };
         }
 
         private static object PoseObject(PetPoseReadback state)
         {
-            return new { schemaVersion = 3, characterId = state.CharacterId, pose = state.Pose,
+            return new { schemaVersion = 4, characterId = state.CharacterId, pose = state.Pose,
                 fallback = state.Fallback, since = state.Since, revision = state.Revision };
         }
 

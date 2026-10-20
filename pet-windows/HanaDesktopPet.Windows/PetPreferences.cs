@@ -16,14 +16,20 @@ namespace HanaDesktopPet.Windows
 
     internal sealed class PetPreferencesData
     {
+        internal PetPreferencesData()
+        {
+            ShowNotices = true;
+        }
+
         public PetSelection Selection { get; set; }
         public bool PositionLocked { get; set; }
+        public bool ShowNotices { get; set; }
         public PetWindowPosition WindowPosition { get; set; }
     }
 
     /// <summary>
-    /// Persists only the local role choice, lock flag and monitor-relative window position.
-    /// No session or activity data is ever written here.
+    /// Persists only the local role choice, lock flag, notification-bubble preference and
+    /// monitor-relative window position. No session or activity data is ever written here.
     /// </summary>
     internal sealed class PetPreferences
     {
@@ -60,6 +66,10 @@ namespace HanaDesktopPet.Windows
                     ? new PetSelection(characterId, Math.Max(0, revision), Math.Max(0, updatedAt))
                     : new PetSelection();
                 bool locked = ReadBoolean(root, "PositionLocked", "positionLocked");
+                // The bubble preference is on unless an explicit stored value says otherwise.
+                bool showNotices = true;
+                if (root.ContainsKey("ShowNotices") || root.ContainsKey("showNotices"))
+                    showNotices = ReadBoolean(root, "ShowNotices", "showNotices");
                 Dictionary<string, object> rawPosition = GetObject(root, "WindowPosition") ?? GetObject(root, "windowPosition");
                 PetWindowPosition position = null;
                 if (rawPosition != null)
@@ -71,7 +81,7 @@ namespace HanaDesktopPet.Windows
                         YRatio = ReadDouble(rawPosition, "YRatio", "yRatio")
                     };
                 }
-                return new PetPreferencesData { Selection = selection, PositionLocked = locked, WindowPosition = CleanPosition(position) };
+                return new PetPreferencesData { Selection = selection, PositionLocked = locked, ShowNotices = showNotices, WindowPosition = CleanPosition(position) };
             }
             catch
             {
@@ -89,6 +99,7 @@ namespace HanaDesktopPet.Windows
                     ? data.Selection
                     : new PetSelection();
                 safe.PositionLocked = data.PositionLocked;
+                safe.ShowNotices = data.ShowNotices;
                 safe.WindowPosition = CleanPosition(data.WindowPosition);
 
                 Dictionary<string, object> selection = new Dictionary<string, object>();
@@ -98,6 +109,7 @@ namespace HanaDesktopPet.Windows
                 Dictionary<string, object> document = new Dictionary<string, object>();
                 document.Add("Selection", selection);
                 document.Add("PositionLocked", safe.PositionLocked);
+                document.Add("ShowNotices", safe.ShowNotices);
                 if (safe.WindowPosition != null)
                 {
                     Dictionary<string, object> position = new Dictionary<string, object>();
@@ -145,6 +157,7 @@ namespace HanaDesktopPet.Windows
             {
                 Selection = new PetSelection(),
                 PositionLocked = false,
+                ShowNotices = true,
                 WindowPosition = null
             };
         }

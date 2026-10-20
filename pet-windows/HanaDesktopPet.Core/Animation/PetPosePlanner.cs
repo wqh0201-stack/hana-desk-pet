@@ -47,9 +47,11 @@ namespace HanaDesktopPet.Core
 
         internal static string PreferredPose(string status, string toolName, string hint)
         {
-            // The existing short error feedback always wins over a concurrent host hint.
-            if (status == "error") return "oops";
+            // Waiting for the user is the most urgent state: a confirmation outranks even
+            // a real error, because the run cannot continue until the user acts.
             if (hint == "confirming") return "asking";
+            // A real error is the existing short feedback and outranks the other hints.
+            if (status == "error") return "oops";
             if (hint == "compacting") return "compact";
             if (hint == "interrupted") return "surprised";
             switch (status)
@@ -61,6 +63,18 @@ namespace HanaDesktopPet.Core
                 default: return "idle";
             }
         }
+
+        /// <summary>Whether this tool maps to a concrete semantic pose; ambient moods must not cover it.</summary>
+        internal static bool IsSemanticToolPose(string toolName)
+        {
+            string pose = PreferredToolPose(toolName);
+            return pose != null && SemanticPoses.Contains(pose);
+        }
+
+        private static readonly HashSet<string> SemanticPoses = new HashSet<string>(StringComparer.Ordinal)
+        {
+            "reading", "writing", "searching", "running", "delegating", "drawing"
+        };
 
         internal static string Resolve(string preferred, ISet<string> available)
         {
@@ -91,6 +105,21 @@ namespace HanaDesktopPet.Core
                 available.Contains(variantName) ? variantName : thinking,
                 available.Contains("busy_right") ? "busy_right" : thinking);
             return poses.SupportsRhythm ? poses : null;
+        }
+
+        /// <summary>
+        /// The ordinary-work rhythm while at least two unbound conversations are working.
+        /// Only the thinking stages change; tool actions, hints, errors and drawing holds
+        /// keep their own priority.
+        /// </summary>
+        internal static WorkPoseSet SwampedWorkPoses(string characterId, ISet<string> available)
+        {
+            WorkPoseSet normal = WorkPoses(characterId, available);
+            if (normal == null) return null;
+            string left = PetMoodPoseResolver.Resolve(PetMood.SwampedLeft, normal.Thinking, available);
+            string right = PetMoodPoseResolver.Resolve(PetMood.SwampedRight, normal.Thinking, available);
+            WorkPoseSet poses = new WorkPoseSet(left, left, right, right);
+            return poses.SupportsRhythm ? poses : normal;
         }
 
         private static string PreferredToolPose(string toolName)
@@ -437,7 +466,7 @@ namespace HanaDesktopPet.Core
         private static bool IsWorkStatus(string status) { return status == "working" || status == "tool"; }
     }
 
-    internal sealed class WorkPoseSet
+    internal sealed class WorkPoseSet : IEquatable<WorkPoseSet>
     {
         internal WorkPoseSet(string thinking, string busyLeft, string thinkingVariant, string busyRight)
         {
@@ -462,5 +491,19 @@ namespace HanaDesktopPet.Core
         }
 
         internal bool SupportsRhythm { get { return DistinctPoses.Count >= 2; } }
+
+        public bool Equals(WorkPoseSet other)
+        {
+            return other != null && Thinking == other.Thinking && BusyLeft == other.BusyLeft &&
+                ThinkingVariant == other.ThinkingVariant && BusyRight == other.BusyRight;
+        }
+
+        public override bool Equals(object obj) { return Equals(obj as WorkPoseSet); }
+
+        public override int GetHashCode()
+        {
+            return (Thinking ?? "").GetHashCode() * 397 ^ (BusyLeft ?? "").GetHashCode() ^
+                (ThinkingVariant ?? "").GetHashCode() ^ (BusyRight ?? "").GetHashCode();
+        }
     }
 }

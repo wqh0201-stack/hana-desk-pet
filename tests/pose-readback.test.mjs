@@ -11,7 +11,7 @@ import {
 import { createHarness } from "./synthetic-host.mjs";
 
 const initialPose = {
-  schemaVersion: 3,
+  schemaVersion: 4,
   characterId: "gpt",
   pose: "thinking",
   fallback: true,
@@ -32,10 +32,10 @@ function response(status, data, url) {
 function clientForState(state, { status = 200, hello = null } = {}) {
   return new PetBridgeClient(async (url) => {
     const path = new URL(url).pathname;
-    if (path === "/v3/hello") {
-      return response(200, hello ?? { service: "hana-desktop-pet", protocolVersion: 3 }, url);
+    if (path === "/v4/hello") {
+      return response(200, hello ?? { service: "hana-desktop-pet", protocolVersion: 4 }, url);
     }
-    if (path === "/v3/state") return response(status, state, url);
+    if (path === "/v4/state") return response(status, state, url);
     throw new Error(`unexpected test route ${path}`);
   });
 }
@@ -65,8 +65,8 @@ test("pose readback accepts the exact DTO and rejects missing, extra and malform
 test("pose revisions are nondecreasing and cannot reuse a revision for different state", async () => {
   let current = { ...initialPose };
   const client = new PetBridgeClient(async (url) => {
-    if (new URL(url).pathname === "/v3/hello") {
-      return response(200, { service: "hana-desktop-pet", protocolVersion: 3 }, url);
+    if (new URL(url).pathname === "/v4/hello") {
+      return response(200, { service: "hana-desktop-pet", protocolVersion: 4 }, url);
     }
     return response(200, current, url);
   });
@@ -112,10 +112,10 @@ async function mountController(mode = "connected", initialEnabled = true) {
   harness.sdk.network.fetch = async (url, init) => {
     const path = new URL(url).pathname;
     if (mode === "unreachable") throw new Error("connection refused; must not persist this text");
-    if (path === "/v3/hello" && mode === "version_mismatch") {
+    if (path === "/v4/hello" && mode === "version_mismatch") {
       return response(200, { service: "hana-desktop-pet", protocolVersion: 2 }, url);
     }
-    if (path === "/v3/state") {
+    if (path === "/v4/state") {
       return response(200, mode === "invalid_response" ? { ...poseState, extra: "reject" } : poseState, url);
     }
     return baseFetch(url, init);

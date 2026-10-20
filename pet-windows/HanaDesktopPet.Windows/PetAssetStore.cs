@@ -18,7 +18,6 @@ namespace HanaDesktopPet.Windows
         byte[] ReadPrefix(string relativePath, int count);
         byte[] ReadAllBytes(string relativePath);
     }
-
     /// <summary>
     /// Artwork packed as one blob plus an offset index, both embedded in the executable.
     /// The blob is opened once and read by offset, so a 98 MB asset set never has to be

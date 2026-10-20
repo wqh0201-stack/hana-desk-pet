@@ -26,6 +26,7 @@ namespace HanaDesktopPet.Windows
         private const int WmDpiChanged = 0x02E0;
         private const int MenuRoleBase = 100;
         private const int MenuToggleLock = 201;
+        private const int MenuToggleNotices = 202;
         private const int MenuDockTopLeft = 301;
         private const int MenuDockTopRight = 302;
         private const int MenuDockBottomLeft = 303;
@@ -53,8 +54,11 @@ namespace HanaDesktopPet.Windows
         private IntPtr _hwnd;
         private PetViewState _state;
         private PetRenderFrame _frame;
+        private PetBubbleWindow _bubble;
+        private double _artworkTopInset = Double.MaxValue;
         private string _listenerState = "starting";
         private bool _positionLocked;
+        private bool _showNotices;
         private bool _isMenuOpen;
         private bool _pointerActive;
         private bool _pointerMoved;
@@ -91,6 +95,7 @@ namespace HanaDesktopPet.Windows
             _preferences = preferences;
             _preferenceData = preferenceData;
             _positionLocked = preferenceData.PositionLocked;
+            _showNotices = preferenceData.ShowNotices;
             _state = store.ViewState();
 
             double ratio = Math.Max(0.1, Math.Min(4.0, catalog.MaximumAspectRatio));
@@ -205,6 +210,11 @@ namespace HanaDesktopPet.Windows
         {
             NativeMethods.SetNonActivatingToolWindow(_hwnd);
             RestoreWindowPosition();
+            if (_bubble == null)
+            {
+                _bubble = new PetBubbleWindow();
+                _bubble.Owner = this;
+            }
             RefreshVisuals();
         }
 
@@ -220,6 +230,11 @@ namespace HanaDesktopPet.Windows
                 _source = null;
             }
             if (_pointerActive) CancelPointerInteraction();
+            if (_bubble != null)
+            {
+                _bubble.Close();
+                _bubble = null;
+            }
             SavePreferences();
         }
 
@@ -305,10 +320,24 @@ namespace HanaDesktopPet.Windows
         {
             if (_isClosing || _state == null) return;
             bool animationsEnabled = IsAnimationVisible();
-            _frame = _animator.Update(_state, NowSeconds(), _reduceMotion, animationsEnabled);
+            long wallNowMs = (long)(DateTime.UtcNow - new DateTime(1970, 1, 1, 0, 0, 0, DateTimeKind.Utc)).TotalMilliseconds;
+            _frame = _animator.Update(_state, NowSeconds(), _reduceMotion, animationsEnabled, _showNotices, wallNowMs);
             DrawCurrentFrame();
+            UpdateBubble();
             ScheduleAnimationWake();
             RefreshToolTip();
+        }
+
+        private void UpdateBubble()
+        {
+            if (_bubble == null) return;
+            if (!_showNotices || _frame == null || _frame.Bubble == null || !IsAnimationVisible())
+            {
+                _bubble.HideNotice(_reduceMotion);
+                return;
+            }
+            _bubble.SetPetArtworkTopInset(_artworkTopInset == Double.MaxValue ? 0.0 : _artworkTopInset);
+            _bubble.ShowBubble(_frame.Bubble, _frame.CharacterId, _reduceMotion, _hwnd);
         }
 
         private void DrawCurrentFrame()
@@ -317,6 +346,7 @@ namespace HanaDesktopPet.Windows
             long generation = _renderGeneration;
             _canvas.Children.Clear();
             _displayedLayers.Clear();
+            _artworkTopInset = Double.MaxValue;
             _errorBadge.Visibility = Visibility.Collapsed;
             _canvas.Children.Add(_errorBadge);
             Panel.SetZIndex(_errorBadge, Int32.MaxValue);
@@ -420,6 +450,7 @@ namespace HanaDesktopPet.Windows
             RenderOptions.SetBitmapScalingMode(image, BitmapScalingMode.HighQuality);
             Canvas.SetLeft(image, left);
             Canvas.SetTop(image, top);
+            if (top < _artworkTopInset) _artworkTopInset = top;
             _canvas.Children.Add(image);
 
             DisplayedLayer displayed = new DisplayedLayer();
@@ -675,6 +706,9 @@ namespace HanaDesktopPet.Windows
             NativeMethods.AppendMenu(root, NativeMethods.MfSeparator, IntPtr.Zero, null);
             string lockLabel = _positionLocked ? "解锁位置" : "锁定位置";
             NativeMethods.AppendMenu(root, NativeMethods.MfString, new IntPtr(MenuToggleLock), lockLabel);
+            uint noticeFlags = NativeMethods.MfString;
+            if (_showNotices) noticeFlags |= NativeMethods.MfChecked;
+            NativeMethods.AppendMenu(root, noticeFlags, new IntPtr(MenuToggleNotices), "显示通知气泡");
             NativeMethods.AppendMenu(dock, NativeMethods.MfString, new IntPtr(MenuDockTopLeft), "左上角");
             NativeMethods.AppendMenu(dock, NativeMethods.MfString, new IntPtr(MenuDockTopRight), "右上角");
             NativeMethods.AppendMenu(dock, NativeMethods.MfString, new IntPtr(MenuDockBottomLeft), "左下角");
@@ -715,6 +749,13 @@ namespace HanaDesktopPet.Windows
                 _positionLocked = !_positionLocked;
                 _preferenceData.PositionLocked = _positionLocked;
                 SavePreferences();
+            }
+            else if (command == MenuToggleNotices)
+            {
+                _showNotices = !_showNotices;
+                _preferenceData.ShowNotices = _showNotices;
+                SavePreferences();
+                if (!_showNotices && _bubble != null) _bubble.HideNotice(_reduceMotion);
             }
             else if (command == MenuDockTopLeft) DockToCorner(false, false);
             else if (command == MenuDockTopRight) DockToCorner(true, false);
@@ -763,6 +804,7 @@ namespace HanaDesktopPet.Windows
         {
             NativeMethods.SetWindowPos(_hwnd, NativeMethods.HwndTopmost, x, y, 0, 0,
                 NativeMethods.SwpNoSize | NativeMethods.SwpNoActivate);
+            if (_bubble != null) _bubble.FollowPet(_hwnd);
         }
 
         private void RestoreWindowPosition()
@@ -846,6 +888,7 @@ namespace HanaDesktopPet.Windows
         private void SavePreferences()
         {
             _preferenceData.PositionLocked = _positionLocked;
+            _preferenceData.ShowNotices = _showNotices;
             if (_state != null && _state.Selection != null) _preferenceData.Selection = _state.Selection;
             _preferences.Save(_preferenceData);
         }

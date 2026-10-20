@@ -12,29 +12,29 @@ public struct PetAPI: Sendable {
 
     public func handle(_ request: PetHTTPRequest) -> PetHTTPResponse {
         switch (request.method, request.path) {
-        case ("GET", "/v3/hello"):
+        case ("GET", "/v4/hello"):
             guard request.body.isEmpty else { return json(400, ["error": "invalid_request"]) }
-            return json(200, ["service": "hana-desktop-pet", "protocolVersion": 3])
-        case ("GET", "/v3/selection"):
+            return json(200, ["service": "hana-desktop-pet", "protocolVersion": 4])
+        case ("GET", "/v4/selection"):
             guard request.body.isEmpty else { return json(400, ["error": "invalid_request"]) }
             return json(200, selectionObject(store.currentSelection()))
-        case ("GET", "/v3/state"):
+        case ("GET", "/v4/state"):
             guard request.body.isEmpty else { return json(400, ["error": "invalid_request"]) }
             return json(200, poseObject(poseReadback.current()))
-        case ("POST", "/v3/snapshot"):
+        case ("POST", "/v4/snapshot"):
             guard hasJSONContentType(request) else { return json(415, ["error": "json_required"]) }
             do {
                 let snapshot = try decodeSnapshot(request.body)
                 switch store.ingest(snapshot) {
                 case .accepted:
-                    return json(200, ["schemaVersion": 3, "accepted": true])
+                    return json(200, ["schemaVersion": 4, "accepted": true])
                 case .stale:
-                    return json(409, ["schemaVersion": 3, "accepted": false])
+                    return json(409, ["schemaVersion": 4, "accepted": false])
                 }
             } catch {
                 return json(400, ["error": "invalid_snapshot"])
             }
-        case ("POST", "/v3/selection"):
+        case ("POST", "/v4/selection"):
             guard hasJSONContentType(request) else { return json(415, ["error": "json_required"]) }
             do {
                 let value = try object(
@@ -42,7 +42,7 @@ public struct PetAPI: Sendable {
                     allowed: ["schemaVersion", "characterId", "expectedRevision", "updatedAt"],
                     required: ["schemaVersion", "characterId", "expectedRevision", "updatedAt"]
                 )
-                guard integer(value["schemaVersion"]) == 3,
+                guard integer(value["schemaVersion"]) == 4,
                       let characterId = try requiredText(value["characterId"], limit: 48),
                       validRoleID(characterId),
                       let expectedRevision = integer(value["expectedRevision"]),
@@ -64,7 +64,7 @@ public struct PetAPI: Sendable {
             } catch {
                 return json(400, ["error": "invalid_selection"])
             }
-        case (_, "/v3/hello"), (_, "/v3/selection"), (_, "/v3/state"), (_, "/v3/snapshot"):
+        case (_, "/v4/hello"), (_, "/v4/selection"), (_, "/v4/state"), (_, "/v4/snapshot"):
             return json(405, ["error": "method_not_allowed"])
         default:
             return json(404, ["error": "not_found"])
@@ -74,15 +74,45 @@ public struct PetAPI: Sendable {
     private func decodeSnapshot(_ body: Data) throws -> PetSnapshotDTO {
         let value = try object(
             body,
-            allowed: ["schemaVersion", "revision", "characters", "activity"],
+            allowed: [
+                "schemaVersion", "revision", "characters", "activity",
+                "followMode", "concurrentSessions", "notifications",
+            ],
             required: ["schemaVersion", "revision", "characters", "activity"]
         )
-        guard integer(value["schemaVersion"]) == 3,
+        guard integer(value["schemaVersion"]) == 4,
               let revision = integer(value["revision"]),
               let rawCharacters = value["characters"] as? [Any],
               (1...PetRole.builtIns.count).contains(rawCharacters.count),
               let activityValue = value["activity"] as? [String: Any] else {
             throw PetAPIError.invalid
+        }
+        // New root fields are validated when present and default safely when absent.
+        // The console always sends them; this keeps the strict allowlist tolerant of a
+        // hand-written synthetic snapshot without weakening any present value.
+        let followMode: PetFollowMode
+        if let rawMode = value["followMode"], !(rawMode is NSNull) {
+            guard let text = try requiredText(rawMode, limit: 16),
+                  let mode = PetFollowMode(rawValue: text) else { throw PetAPIError.invalid }
+            followMode = mode
+        } else {
+            followMode = .latest
+        }
+        let concurrentSessions: Int64
+        if let rawConcurrent = value["concurrentSessions"], !(rawConcurrent is NSNull) {
+            guard let number = integer(rawConcurrent), (0...32).contains(number) else {
+                throw PetAPIError.invalid
+            }
+            concurrentSessions = number
+        } else {
+            concurrentSessions = 0
+        }
+        let rawNotifications: [Any]
+        if let rawList = value["notifications"], !(rawList is NSNull) {
+            guard let list = rawList as? [Any], list.count <= 8 else { throw PetAPIError.invalid }
+            rawNotifications = list
+        } else {
+            rawNotifications = []
         }
         let characterKeys = Set(["id", "name"])
         var roles: [PetRole] = []
@@ -105,7 +135,7 @@ public struct PetAPI: Sendable {
         let requiredActivityKeys = Set([
             "sessionId", "title", "agentId", "agentName", "status", "toolName", "lastActivityAt",
         ])
-        let activityKeys = requiredActivityKeys.union(["hint"])
+        let activityKeys = requiredActivityKeys.union(["hint", "spotlight"])
         guard Set(activityValue.keys).isSubset(of: activityKeys),
               requiredActivityKeys.isSubset(of: Set(activityValue.keys)),
               let statusText = try requiredText(activityValue["status"], limit: 16),
@@ -121,9 +151,45 @@ public struct PetAPI: Sendable {
             status: status,
             toolName: try optionalText(activityValue["toolName"], limit: 80),
             lastActivityAt: lastActivityAt,
-            hint: try optionalHint(activityValue["hint"])
+            hint: try optionalHint(activityValue["hint"]),
+            spotlight: try optionalSpotlight(activityValue["spotlight"])
         )
-        return PetSnapshotDTO(revision: revision, characters: roles, activity: activity)
+
+        var notifications: [PetNotice] = []
+        var noticeIds = Set<String>()
+        for raw in rawNotifications {
+            guard let item = raw as? [String: Any],
+                  Set(item.keys).isSubset(of: ["id", "kind", "sessionId", "title", "at"]),
+                  let id = try requiredText(item["id"], limit: 96),
+                  !id.isEmpty,
+                  id.unicodeScalars.allSatisfy({ scalar in
+                      (scalar.value >= 97 && scalar.value <= 122) ||
+                      (scalar.value >= 65 && scalar.value <= 90) ||
+                      (scalar.value >= 48 && scalar.value <= 57) ||
+                      scalar.value == 95 || scalar.value == 46 || scalar.value == 58 || scalar.value == 45
+                  }),
+                  let kindText = try requiredText(item["kind"], limit: 16),
+                  let kind = PetNoticeKind(rawValue: kindText),
+                  let at = integer(item["at"]),
+                  noticeIds.insert(id).inserted else {
+                throw PetAPIError.invalid
+            }
+            notifications.append(PetNotice(
+                id: id,
+                kind: kind,
+                sessionId: try optionalText(item["sessionId"], limit: 256),
+                title: try optionalText(item["title"], limit: 120),
+                at: at
+            ))
+        }
+        return PetSnapshotDTO(
+            revision: revision,
+            characters: roles,
+            activity: activity,
+            followMode: followMode,
+            concurrentSessions: Int(concurrentSessions),
+            notifications: notifications
+        )
     }
 
     private func object(_ body: Data, allowed: Set<String>, required: Set<String>) throws -> [String: Any] {
@@ -161,6 +227,18 @@ public struct PetAPI: Sendable {
         return hint
     }
 
+    private func optionalSpotlight(_ value: Any?) throws -> PetActivitySpotlight? {
+        guard let value, !(value is NSNull) else { return nil }
+        guard let item = value as? [String: Any],
+              Set(item.keys) == ["kind", "at"],
+              let kind = try requiredText(item["kind"], limit: 16),
+              kind == "drawing",
+              let at = integer(item["at"]) else {
+            throw PetAPIError.invalid
+        }
+        return PetActivitySpotlight(kind: kind, at: at)
+    }
+
     private func integer(_ value: Any?) -> Int64? {
         guard let number = value as? NSNumber,
               CFGetTypeID(number) != CFBooleanGetTypeID() else { return nil }
@@ -184,7 +262,7 @@ public struct PetAPI: Sendable {
 
     private func selectionObject(_ selection: PetSelection) -> [String: Any] {
         [
-            "schemaVersion": 3,
+            "schemaVersion": 4,
             "characterId": selection.characterId,
             "revision": selection.revision,
             "updatedAt": selection.updatedAt,
@@ -193,7 +271,7 @@ public struct PetAPI: Sendable {
 
     private func poseObject(_ state: PetPoseReadback) -> [String: Any] {
         [
-            "schemaVersion": 3,
+            "schemaVersion": 4,
             "characterId": state.characterId,
             "pose": state.pose,
             "fallback": state.fallback,
@@ -216,7 +294,7 @@ public struct PetPoseReadback: Equatable, Sendable {
     public let since: Int64
     public let revision: Int64
 
-    public var schemaVersion: Int { 3 }
+    public var schemaVersion: Int { 4 }
 
     public init(characterId: String, pose: String, fallback: Bool, since: Int64, revision: Int64) {
         self.characterId = characterId

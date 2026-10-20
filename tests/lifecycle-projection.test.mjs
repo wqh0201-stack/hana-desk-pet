@@ -25,13 +25,19 @@ test("the synthetic lifecycle walks read/write tools, short feedback, continued 
   }
 });
 
-test("every projected step stays a strict v2 DTO with no private bus content", () => {
+test("every projected step stays a strict v4 DTO with no private bus content", () => {
   for (const step of fixture.steps) {
-    assert.equal(step.dto.schemaVersion, 3, `${step.label} schema`);
-    assert.deepEqual(Object.keys(step.dto).sort(), ["activity", "characters", "revision", "schemaVersion"], `${step.label} root keys`);
+    assert.equal(step.dto.schemaVersion, 4, `${step.label} schema`);
+    assert.deepEqual(Object.keys(step.dto).sort(), [
+      "activity", "characters", "concurrentSessions", "followMode", "notifications", "revision", "schemaVersion",
+    ], `${step.label} root keys`);
     assert.deepEqual(Object.keys(step.dto.activity).sort(), [
-      "agentId", "agentName", "hint", "lastActivityAt", "sessionId", "status", "title", "toolName",
+      "agentId", "agentName", "hint", "lastActivityAt", "sessionId", "spotlight", "status", "title", "toolName",
     ], `${step.label} activity keys`);
+    assert.equal(step.dto.followMode, "latest", `${step.label} follow mode`);
+    assert.ok(Number.isSafeInteger(step.dto.concurrentSessions) && step.dto.concurrentSessions >= 0,
+      `${step.label} bounded concurrency`);
+    assert.ok(Array.isArray(step.dto.notifications), `${step.label} notifications array`);
     assert.equal(step.dto.characters.length, 7, `${step.label} keeps the seven manual choices`);
     const serialized = JSON.stringify(step.dto);
     for (const sentinel of LIFECYCLE_PRIVATE_SENTINELS) {
@@ -72,6 +78,21 @@ test("the fixture stays deterministic and serializable for the native replay", (
   assert.deepEqual(revisions, [...revisions].sort((a, b) => a - b), "revisions are strictly increasing for the native store");
 });
 
+test("the full v4 metadata step really carries every new field", () => {
+  const step = fixture.v4Step;
+  assert.equal(step.dto.schemaVersion, 4);
+  assert.equal(step.dto.followMode, "pinned");
+  assert.equal(step.dto.concurrentSessions, 1, "the running synthetic session is counted");
+  assert.deepEqual(step.dto.notifications.map((notice) => notice.kind), ["confirmation"]);
+  assert.deepEqual(step.dto.activity.spotlight, { kind: "drawing", at: 20010 });
+  assert.equal(step.dto.activity.hint, "confirming");
+  assert.equal(step.dto.activity.status, "tool");
+  const serialized = JSON.stringify(step.dto);
+  for (const sentinel of LIFECYCLE_PRIVATE_SENTINELS) {
+    assert.equal(serialized.includes(sentinel), false, `the v4 step leaks ${sentinel}`);
+  }
+});
+
 // --- Synthetic concurrent follow input -----------------------------------------
 //
 // These steps feed the existing follow rules only. The 30-second active-work protection
@@ -98,7 +119,7 @@ test("two concurrent synthetic sessions keep the existing anti-ping-pong protect
     "after both windows the newest activity wins again");
   for (const step of fixture.concurrentSteps) {
     assert.equal(step.dto.activity.sessionId, step.expectation.current, `${step.label} current owner`);
-    assert.equal(step.dto.schemaVersion, 3, `${step.label} stays schema v3`);
+    assert.equal(step.dto.schemaVersion, 4, `${step.label} stays schema v4`);
     const serialized = JSON.stringify(step.dto);
     for (const sentinel of LIFECYCLE_PRIVATE_SENTINELS) {
       assert.equal(serialized.includes(sentinel), false, `${step.label} leaks ${sentinel}`);

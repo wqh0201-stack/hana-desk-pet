@@ -693,7 +693,7 @@ async function run() {
     results.push({ name: "download-accepted", ...opened, openCalls: calls.result.value });
     check(opened.fallback.hidden === true, "accepted: the fallback block should stay hidden");
     check(Array.isArray(calls.result.value) && calls.result.value.length === 1 &&
-      calls.result.value[0].endsWith("HanaDesktopPet-crosspet-v0.5.8-local.zip"),
+      calls.result.value[0].endsWith("HanaDesktopPet-crosspet-v0.5.9-local.zip"),
       `accepted: unexpected open calls ${JSON.stringify(calls.result.value)}`);
     check(opened.document.scrollHeight <= 665, "accepted: page overflow after opening the link");
     const notice = await cdp.send("Runtime.evaluate", {

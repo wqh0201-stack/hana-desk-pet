@@ -46,10 +46,11 @@ namespace HanaDesktopPet.Core
         public string ToolName { get; private set; }
         public long LastActivityAt { get; private set; }
         public string Hint { get; private set; }
+        public PetSpotlight Spotlight { get; private set; }
 
         public PetActivity(string sessionId = null, string title = null, string agentId = null,
             string agentName = null, string status = "idle", string toolName = null,
-            long lastActivityAt = 0, string hint = null)
+            long lastActivityAt = 0, string hint = null, PetSpotlight spotlight = null)
         {
             SessionId = sessionId;
             Title = title;
@@ -59,6 +60,39 @@ namespace HanaDesktopPet.Core
             ToolName = toolName;
             LastActivityAt = lastActivityAt;
             Hint = hint;
+            Spotlight = spotlight;
+        }
+    }
+
+    /// <summary>A display-only marker for an asynchronous tool; it never means the session is running.</summary>
+    public sealed class PetSpotlight
+    {
+        public string Kind { get; private set; }
+        public long At { get; private set; }
+
+        public PetSpotlight(string kind, long at)
+        {
+            Kind = kind;
+            At = Math.Max(0, at);
+        }
+    }
+
+    /// <summary>One bounded presentation event; the id is the only dedupe key.</summary>
+    public sealed class PetNotice
+    {
+        public string Id { get; private set; }
+        public string Kind { get; private set; }
+        public string SessionId { get; private set; }
+        public string Title { get; private set; }
+        public long At { get; private set; }
+
+        public PetNotice(string id, string kind, string sessionId, string title, long at)
+        {
+            Id = id;
+            Kind = kind;
+            SessionId = sessionId;
+            Title = title;
+            At = Math.Max(0, at);
         }
     }
 
@@ -82,15 +116,32 @@ namespace HanaDesktopPet.Core
         public PetActivity Activity { get; private set; }
         public PetSelection Selection { get; private set; }
         public bool AppConnected { get; private set; }
+        public string FollowMode { get; private set; }
+        public int ConcurrentSessions { get; private set; }
+        public IReadOnlyList<PetNotice> Notifications { get; private set; }
         public string DisplayStatus { get { return AppConnected ? Activity.Status : "idle"; } }
         public string DisplayHint { get { return AppConnected ? Activity.Hint : null; } }
+        public PetSpotlight DisplaySpotlight { get { return AppConnected ? Activity.Spotlight : null; } }
+        public string DisplayFollowMode { get { return AppConnected ? FollowMode : "latest"; } }
+        public int DisplayConcurrentSessions { get { return AppConnected ? ConcurrentSessions : 0; } }
+        public IReadOnlyList<PetNotice> DisplayNotifications
+        {
+            get { return AppConnected ? Notifications : EmptyNotices; }
+        }
 
-        public PetViewState(IReadOnlyList<PetRole> roles, PetActivity activity, PetSelection selection, bool appConnected)
+        private static readonly IReadOnlyList<PetNotice> EmptyNotices = Array.AsReadOnly(new PetNotice[0]);
+
+        public PetViewState(IReadOnlyList<PetRole> roles, PetActivity activity, PetSelection selection,
+            bool appConnected, string followMode = "latest", int concurrentSessions = 0,
+            IReadOnlyList<PetNotice> notifications = null)
         {
             Roles = roles;
             Activity = activity;
             Selection = selection;
             AppConnected = appConnected;
+            FollowMode = followMode == "pinned" ? "pinned" : "latest";
+            ConcurrentSessions = Math.Max(0, concurrentSessions);
+            Notifications = notifications ?? EmptyNotices;
         }
     }
 
@@ -99,12 +150,20 @@ namespace HanaDesktopPet.Core
         public long Revision { get; private set; }
         public IReadOnlyList<PetRole> Characters { get; private set; }
         public PetActivity Activity { get; private set; }
+        public string FollowMode { get; private set; }
+        public int ConcurrentSessions { get; private set; }
+        public IReadOnlyList<PetNotice> Notifications { get; private set; }
 
-        public PetSnapshotDTO(long revision, IReadOnlyList<PetRole> characters, PetActivity activity)
+        public PetSnapshotDTO(long revision, IReadOnlyList<PetRole> characters, PetActivity activity,
+            string followMode = "latest", int concurrentSessions = 0,
+            IReadOnlyList<PetNotice> notifications = null)
         {
             Revision = revision;
             Characters = characters;
             Activity = activity;
+            FollowMode = followMode == "pinned" ? "pinned" : "latest";
+            ConcurrentSessions = Math.Max(0, concurrentSessions);
+            Notifications = notifications ?? Array.AsReadOnly(new PetNotice[0]);
         }
     }
 
@@ -132,6 +191,9 @@ namespace HanaDesktopPet.Core
         private PetSelection selection;
         private long snapshotRevision;
         private long lastSnapshotReceivedAt;
+        private string followMode = "latest";
+        private int concurrentSessions;
+        private IReadOnlyList<PetNotice> notifications = Array.AsReadOnly(new PetNotice[0]);
 
         public PetStateStore(PetSelection initialSelection = null)
         {
@@ -146,7 +208,8 @@ namespace HanaDesktopPet.Core
                 long instant = now.HasValue ? now.Value : NowMilliseconds();
                 bool connected = lastSnapshotReceivedAt > 0 && instant >= lastSnapshotReceivedAt &&
                     instant - lastSnapshotReceivedAt <= ConnectionTimeoutMs;
-                return new PetViewState(roles, activity, selection, connected);
+                return new PetViewState(roles, activity, selection, connected,
+                    followMode, concurrentSessions, notifications);
             }
         }
 
@@ -176,6 +239,9 @@ namespace HanaDesktopPet.Core
                 snapshotRevision = snapshot.Revision;
                 roles = Array.AsReadOnly(snapshot.Characters.ToArray());
                 activity = snapshot.Activity;
+                followMode = snapshot.FollowMode;
+                concurrentSessions = snapshot.ConcurrentSessions;
+                notifications = Array.AsReadOnly(snapshot.Notifications.ToArray());
                 long instant = Math.Max(0, receivedAt.HasValue ? receivedAt.Value : NowMilliseconds());
                 lastSnapshotReceivedAt = Math.Max(instant, lastSnapshotReceivedAt);
                 if (!roles.Any(role => role.Id == selection.CharacterId) && roles.Count > 0)

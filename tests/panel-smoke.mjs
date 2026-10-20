@@ -212,7 +212,7 @@ failWrites.clear();
 
 store["hana-pet.bridge.status"] = {
   status: "connected", reason: null,
-  poseState: { schemaVersion: 3, characterId: "gpt", pose: "thinking", fallback: true, since: 10, revision: 4 },
+  poseState: { schemaVersion: 4, characterId: "gpt", pose: "thinking", fallback: true, since: 10, revision: 4 },
 };
 storageChange?.(["hana-pet.bridge.status"]);
 await new Promise((r) => setTimeout(r, 30));
@@ -231,7 +231,7 @@ for (const [pose, label] of [["reading-2", "阅读"], ["happy-2", "开心"], ["s
   ["thinking-2", "思考"], ["sorry", "抱歉"]]) {
   store["hana-pet.bridge.status"] = {
     status: "connected", reason: null,
-    poseState: { schemaVersion: 3, characterId: "claude", pose, fallback: false, since: 11, revision: variantRevision++ },
+    poseState: { schemaVersion: 4, characterId: "claude", pose, fallback: false, since: 11, revision: variantRevision++ },
   };
   storageChange?.(["hana-pet.bridge.status"]);
   await new Promise((r) => setTimeout(r, 20));
@@ -245,7 +245,7 @@ for (const [pose, label] of [["reading-2", "阅读"], ["happy-2", "开心"], ["s
 for (const [pose, label] of [["picked-up", "被拎起"], ["picked-up-2", "被拎起·扑腾"]]) {
   store["hana-pet.bridge.status"] = {
     status: "connected", reason: null,
-    poseState: { schemaVersion: 3, characterId: "gpt-onesie", pose, fallback: false, since: 12, revision: variantRevision++ },
+    poseState: { schemaVersion: 4, characterId: "gpt-onesie", pose, fallback: false, since: 12, revision: variantRevision++ },
   };
   storageChange?.(["hana-pet.bridge.status"]);
   await new Promise((r) => setTimeout(r, 20));

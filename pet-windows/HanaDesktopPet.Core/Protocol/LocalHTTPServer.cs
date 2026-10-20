@@ -188,7 +188,7 @@ namespace HanaDesktopPet.Core
 
                                 PetHTTPResponse response = api.Handle(request);
                                 if (response.StatusCode == 200 && request.Method == "POST" &&
-                                    (request.Path == "/v3/snapshot" || request.Path == "/v3/selection"))
+                                    (request.Path == "/v4/snapshot" || request.Path == "/v4/selection"))
                                     RaiseStateChanged();
                                 await WriteResponseAsync(stream, response, deadline.Token).ConfigureAwait(false);
                                 return;

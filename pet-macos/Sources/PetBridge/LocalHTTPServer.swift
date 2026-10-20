@@ -69,8 +69,8 @@ public final class LocalHTTPServer: @unchecked Sendable {
                 if let request = try PetHTTPCodec.parse(bytes) {
                     let response = self.api.handle(request)
                     if response.statusCode == 200 &&
-                        ((request.method == "POST" && request.path == "/v3/snapshot") ||
-                         (request.method == "POST" && request.path == "/v3/selection")) {
+                        ((request.method == "POST" && request.path == "/v4/snapshot") ||
+                         (request.method == "POST" && request.path == "/v4/selection")) {
                         DispatchQueue.main.async { self.onStateChange?() }
                     }
                     self.send(response, over: connection)
