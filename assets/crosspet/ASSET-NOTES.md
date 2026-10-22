@@ -35,6 +35,14 @@
 
 本地检查结果：193 张被清单引用的 WebP 都是单帧、有 Alpha 的图片，高度均为 640 px；宽度因原图透明画布不同而变化（477–730 px）。因此渲染适配建议：保留原宽高比、以固定人物高度缩放，使用 fit/contain，不强行裁成统一方形或切 sprite sheet；用 `idle.webp` 作为缺少姿态的回退，并按上游语义处理 `-2` / `-3` 与 `idle-blink`。逐帧检查通过；这里的“单帧”是静态 WebP 图片，不是 WebP 动画。
 
+## 双击铁盆道具（`shared/basin.png`）
+
+- 桌宠双击「扣铁盆」用的通用金属盆，只此一张，不属于角色立绘、不在 `catalog.json` 里，也不计入 211 / 18 的素材计数。
+- 非 CrossPet 上游素材、不归入任何上游原画师署名；由本项目为这个功能准备，按 **CC BY-NC-SA 4.0** 同样条件随包使用（见 `ATTRIBUTION.md`）。
+- 交付图 128×51、带透明边距；已按不透明边界裁切为 **117×47**（仅裁透明像素，无重采样、无重绘），两端都按固定 96×38.5 pt 显示。
+- 同步副本：`pet-macos/Sources/HanaDesktopPet/Resources/CrossPet/shared/basin.png`（逐字节一致，`tests/pose-assets.test.mjs` 守卫）；Windows 侧由 `tools/prepare-windows-assets.swift` 复制进 `.build/windows-assets/CrossPet/shared/` 并单独记入 `build-manifest.json` 的 `sharedAssets`。
+- 查找顺序是 `{角色ID}/basin.png` → `shared/basin.png` → 代码内矢量盆；缺图或解码失败仍能画出盆，不会崩溃。
+
 ## 本次选择范围
 
 - 已准备 **5 个基础角色 + 2 个皮肤，共 193 张姿态立绘**；包含 idle/idle 变体、听/想/读/写/运行/搜索/委派/绘图、完成/出错/提问/压缩/额度紧张、多会话状态，以及上游角色特有姿态（如 GPT reset、DeepSeek 吃饭/游泳、Gemini float、GLM 面罩/价签）。精确文件集合见 `catalog.json`。

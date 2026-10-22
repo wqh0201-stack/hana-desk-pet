@@ -6,6 +6,8 @@ final class PetViewModel {
     private(set) var listenerStatus = "starting"
     private(set) var positionLocked: Bool
     private(set) var showNotices: Bool
+    private(set) var basinOverrides: [String: PetBasinConfig]
+    private var basinPreview: [String: PetBasinConfig] = [:]
     var onChange: (() -> Void)?
 
     let store: PetStateStore
@@ -15,6 +17,7 @@ final class PetViewModel {
         self.state = store.viewState()
         self.positionLocked = UserDefaults.standard.bool(forKey: PetPreferences.positionLockKey)
         self.showNotices = PetPreferences.loadShowNotices()
+        self.basinOverrides = PetPreferences.loadBasinConfigOverrides()
     }
 
     func refreshFromServer() {
@@ -55,11 +58,44 @@ final class PetViewModel {
         PetPreferences.saveShowNotices(enabled)
         onChange?()
     }
+
+    /// Resolved geometry for a role: live debug preview, then the saved override, then the
+    /// built-in per-character table.
+    func basinConfig(for roleId: String) -> PetBasinConfig {
+        if let preview = basinPreview[roleId] { return preview }
+        if let override = basinOverrides[roleId] { return override }
+        return PetBasinStack.config(for: roleId)
+    }
+
+    /// Live edit from the debug panel. Not persisted until the user presses save.
+    func setBasinPreview(roleId: String, config: PetBasinConfig) {
+        let clamped = config.clamped()
+        guard basinPreview[roleId] != clamped else { return }
+        basinPreview[roleId] = clamped
+        onChange?()
+    }
+
+    func setBasinConfig(_ config: PetBasinConfig, for roleId: String) {
+        let clamped = config.clamped()
+        basinOverrides[roleId] = clamped
+        basinPreview.removeValue(forKey: roleId)
+        PetPreferences.saveBasinConfigOverride(clamped, for: roleId)
+        onChange?()
+    }
+
+    func resetBasinConfig(for roleId: String) {
+        let hadOverride = basinOverrides.removeValue(forKey: roleId) != nil
+        let hadPreview = basinPreview.removeValue(forKey: roleId) != nil
+        guard hadOverride || hadPreview else { return }
+        PetPreferences.clearBasinConfigOverride(for: roleId)
+        onChange?()
+    }
 }
 
 enum PetPreferences {
     static let positionLockKey = "hana-desktop-pet.position-locked"
     static let showNoticesKey = "hana-desktop-pet.show-notices"
+    static let basinConfigKey = "hana-desktop-pet.basin-configs"
     private static let idKey = "hana-desktop-pet.selected-character"
     private static let revisionKey = "hana-desktop-pet.selection-revision"
     private static let updatedAtKey = "hana-desktop-pet.selection-updated-at"
@@ -93,5 +129,34 @@ enum PetPreferences {
 
     static func saveShowNotices(_ enabled: Bool) {
         UserDefaults.standard.set(enabled, forKey: showNoticesKey)
+    }
+
+    /// Per-character basin overrides, saved by the debug panel. Only the three geometry
+    /// numbers are stored; nothing about the session or the artwork is written.
+    static func loadBasinConfigOverrides() -> [String: PetBasinConfig] {
+        guard let raw = UserDefaults.standard.dictionary(forKey: basinConfigKey) else { return [:] }
+        var result: [String: PetBasinConfig] = [:]
+        for (roleId, value) in raw {
+            guard let entry = value as? [String: Any],
+                  let width = (entry["width"] as? NSNumber)?.doubleValue,
+                  let xOffset = (entry["xOffset"] as? NSNumber)?.doubleValue,
+                  let yOffset = (entry["yOffset"] as? NSNumber)?.doubleValue else { continue }
+            result[roleId] = PetBasinConfig(width: width, xOffset: xOffset, yOffset: yOffset).clamped()
+        }
+        return result
+    }
+
+    static func saveBasinConfigOverride(_ config: PetBasinConfig, for roleId: String) {
+        let defaults = UserDefaults.standard
+        var raw = defaults.dictionary(forKey: basinConfigKey) ?? [:]
+        raw[roleId] = ["width": config.width, "xOffset": config.xOffset, "yOffset": config.yOffset]
+        defaults.set(raw, forKey: basinConfigKey)
+    }
+
+    static func clearBasinConfigOverride(for roleId: String) {
+        let defaults = UserDefaults.standard
+        var raw = defaults.dictionary(forKey: basinConfigKey) ?? [:]
+        guard raw.removeValue(forKey: roleId) != nil else { return }
+        defaults.set(raw, forKey: basinConfigKey)
     }
 }

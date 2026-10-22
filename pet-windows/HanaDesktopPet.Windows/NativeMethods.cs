@@ -108,7 +108,10 @@ namespace HanaDesktopPet.Windows
         [return: MarshalAs(UnmanagedType.Bool)]
         private static extern bool EnumDisplayMonitors(IntPtr hdc, IntPtr clipRect, MonitorEnumProc callback, IntPtr data);
 
-        [DllImport("user32.dll", SetLastError = true)]
+        [DllImport("user32.dll")]
+        internal static extern uint GetDoubleClickTime();
+
+        [DllImport("user32.dll")]
         [return: MarshalAs(UnmanagedType.Bool)]
         internal static extern bool IsWindowVisible(IntPtr hwnd);
 

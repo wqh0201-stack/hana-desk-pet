@@ -97,6 +97,7 @@ swiftc -parse-as-library -module-cache-path "$MODULE_CACHE" -o "$CHECK_DIR/PoseT
   "$CORE_DIR/PetPointerGesture.swift" \
   "$CORE_DIR/PetWindowInteraction.swift" \
   "$CORE_DIR/PetPoseTimeline.swift" \
+  "$CORE_DIR/PetBasinStack.swift" \
   "$CORE_DIR/PetPosePlanner.swift" \
   "$CORE_DIR/PetPoseMood.swift" \
   "$CORE_DIR/PetWorkPoseScheduler.swift" \
@@ -110,6 +111,7 @@ swiftc -parse-as-library -module-cache-path "$MODULE_CACHE" -o "$CHECK_DIR/PoseD
   "$CORE_DIR/PetPointerGesture.swift" \
   "$CORE_DIR/PetWindowInteraction.swift" \
   "$CORE_DIR/PetPoseTimeline.swift" \
+  "$CORE_DIR/PetBasinStack.swift" \
   "$CORE_DIR/PetArtworkCatalog.swift" \
   "$CORE_DIR/PetPosePlanner.swift" \
   "$CORE_DIR/PetPoseMood.swift" \
@@ -123,6 +125,7 @@ swiftc -parse-as-library -module-cache-path "$MODULE_CACHE" -o "$CHECK_DIR/Subti
   "$CORE_DIR/PetState.swift" \
   "$CORE_DIR/PetNoticeCenter.swift" \
   "$CORE_DIR/PetPoseTimeline.swift" \
+  "$CORE_DIR/PetBasinStack.swift" \
   "$CORE_DIR/PetBubbleLayout.swift" \
   "$CORE_DIR/PetBubbleTheme.swift" \
   "$CORE_DIR/PetSubtitleCatalog.swift" \
@@ -134,6 +137,7 @@ echo "== Bubble render checks (F, offscreen AppKit) =="
 swiftc -module-cache-path "$MODULE_CACHE" -o "$CHECK_DIR/BubbleRenderChecks" \
   "$CORE_DIR/PetState.swift" \
   "$CORE_DIR/PetPoseTimeline.swift" \
+  "$CORE_DIR/PetBasinStack.swift" \
   "$CORE_DIR/PetBubbleLayout.swift" \
   "$CORE_DIR/PetBubbleTheme.swift" \
   tests/bubble-render-checks.swift
@@ -147,6 +151,7 @@ sed 's/^import PetCore$//' "$PROJECT_ROOT/pet-macos/Sources/HanaDesktopPet/PetBu
 swiftc -parse-as-library -module-cache-path "$MODULE_CACHE" -o "$CHECK_DIR/BubbleViewChecks" \
   "$CORE_DIR/PetState.swift" \
   "$CORE_DIR/PetPoseTimeline.swift" \
+  "$CORE_DIR/PetBasinStack.swift" \
   "$CORE_DIR/PetBubbleLayout.swift" \
   "$CORE_DIR/PetBubbleTheme.swift" \
   "$CORE_DIR/PetNoticeCenter.swift" \
@@ -156,6 +161,20 @@ swiftc -parse-as-library -module-cache-path "$MODULE_CACHE" -o "$CHECK_DIR/Bubbl
   tests/bubble-view-checks.swift
 "$CHECK_DIR/BubbleViewChecks"
 
+echo "== Pose basin render checks (H, offscreen AppKit) =="
+# The pile is painted exactly as the pet view paints it: the shipped 117×47 basin artwork
+# or the vector fallback, over a real decoded pose, into an NSBitmapImageRep.
+sed 's/^import PetCore$//' "$PROJECT_ROOT/pet-macos/Sources/HanaDesktopPet/PetBasinLayer.swift" \
+  > "$CHECK_DIR/PetBasinLayerNoModule.swift"
+swiftc -module-cache-path "$MODULE_CACHE" -o "$CHECK_DIR/PoseBasinRenderChecks" \
+  "$CORE_DIR/PetState.swift" \
+  "$CORE_DIR/PetPoseTimeline.swift" \
+  "$CORE_DIR/PetBasinStack.swift" \
+  "$CORE_DIR/PetArtworkCatalog.swift" \
+  "$CHECK_DIR/PetBasinLayerNoModule.swift" \
+  tests/pose-basin-render-checks.swift
+"$CHECK_DIR/PoseBasinRenderChecks" "$ASSETS" "$ASSETS/shared/basin.png"
+
 echo "== Cross-layer lifecycle checks (JS projection -> native v2 -> planner -> timeline) =="
 swiftc -parse-as-library -module-cache-path "$MODULE_CACHE" -o "$CHECK_DIR/PoseLifecycleChecks" \
   "$CORE_DIR/PetState.swift" \
@@ -164,6 +183,7 @@ swiftc -parse-as-library -module-cache-path "$MODULE_CACHE" -o "$CHECK_DIR/PoseL
   "$CORE_DIR/PetPointerGesture.swift" \
   "$CORE_DIR/PetWindowInteraction.swift" \
   "$CORE_DIR/PetPoseTimeline.swift" \
+  "$CORE_DIR/PetBasinStack.swift" \
   "$CORE_DIR/PetArtworkCatalog.swift" \
   "$CORE_DIR/PetPoseHitCoverage.swift" \
   "$CORE_DIR/PetPosePlanner.swift" \

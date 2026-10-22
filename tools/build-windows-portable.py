@@ -97,6 +97,11 @@ def catalog_entries(assets: pathlib.Path):
     if not lines_path.is_file():
         raise SystemExit("missing prepared subtitle table: " + str(lines_path))
     entries.append(("pet-lines.json", lines_path))
+    # The shared basin artwork is a single optional prop for the double-click pile; it is
+    # not a catalog pose, so it rides in the blob without touching the pose count.
+    shared_basin = artwork / "shared" / "basin.png"
+    if shared_basin.is_file():
+        entries.append(("shared/basin.png", shared_basin))
     for character in catalog["characters"]:
         directory = character["assetDirectory"]
         for name in character["poseFiles"]:

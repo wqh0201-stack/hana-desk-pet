@@ -33,6 +33,11 @@ public final class PetArtworkFrame: NSObject {
     public let width: Int
     public let height: Int
     public let byteCost: Int
+    /// Bounding box of the visible pixels, in source pixels with a top-left origin. The
+    /// dangling pick-up frames draw the character smaller than the canvas, and this is what
+    /// lets the renderer scale them back to the same character height as the other poses.
+    public let contentTop: Int
+    public let contentHeight: Int
     private let alphaBytes: Data
     private let bytesPerRow: Int
     private let alphaOffset: Int
@@ -57,6 +62,24 @@ public final class PetArtworkFrame: NSObject {
         self.bytesPerRow = image.bytesPerRow
         self.alphaBytes = data
         self.byteCost = data.count * 2
+
+        var first = -1
+        var last = -1
+        for row in 0..<image.height {
+            var opaque = false
+            let base = row * image.bytesPerRow + alphaOffset
+            for column in stride(from: 0, to: image.width * 4, by: 4)
+                where data[base + column] >= 32 {
+                opaque = true
+                break
+            }
+            if opaque {
+                if first < 0 { first = row }
+                last = row
+            }
+        }
+        self.contentTop = first < 0 ? 0 : first
+        self.contentHeight = last < first ? image.height : last - first + 1
     }
 
     /// Raw source alpha for one pixel (0–255), top-left origin, independent of AppKit view

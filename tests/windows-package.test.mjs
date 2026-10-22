@@ -29,6 +29,10 @@ test('Windows PNG catalog covers exactly the licensed source catalog and preserv
   skip: !fs.existsSync(prepared) && 'Run the macOS Windows asset preparation tool first; conversion is not a Windows runtime requirement.',
 }, () => {
   assert.deepEqual(verifyWindowsAssets(prepared), { poseCount: 211, upstreamCount: 193, generatedCount: 18 });
+  const basin = path.join(prepared, 'CrossPet/shared/basin.png');
+  assert.ok(fs.existsSync(basin), 'the shared double-click basin must ship with the Windows assets');
+  assert.deepEqual(fs.readFileSync(basin), fs.readFileSync(path.join(ROOT, 'assets/crosspet/shared/basin.png')),
+    'the packed basin must be byte-identical to the canonical artwork');
 });
 
 test('the retired first-start-compilation package can no longer produce an archive', () => {
@@ -56,7 +60,7 @@ test('Windows single-file sources and build entries exist at the repository layo
     assert.ok(!fs.existsSync(path.join(source, retired)), `retired first-start file is back: ${retired}`);
   }
   const version = JSON.parse(fs.readFileSync(path.join(source, 'version.json'), 'utf8'));
-  assert.equal(version.version, '0.3.0');
+  assert.equal(version.version, '0.3.1');
   assert.equal(version.protocolVersion, 4);
   assert.equal(version.distribution, 'single-file-portable');
   for (const tool of ['build-windows-portable.py', 'run-windows-checks.py']) {

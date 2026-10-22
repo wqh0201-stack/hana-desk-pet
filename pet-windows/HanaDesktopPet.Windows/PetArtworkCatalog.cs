@@ -17,6 +17,10 @@ namespace HanaDesktopPet.Windows
         public int Height { get; private set; }
         public byte[] Alpha { get; private set; }
         public long ByteCost { get; private set; }
+        /// <summary>First row holding a visible pixel (top-left origin).</summary>
+        public int ContentTop { get; private set; }
+        /// <summary>Number of rows holding a visible pixel.</summary>
+        public int ContentHeight { get; private set; }
 
         public PetArtwork(BitmapSource bitmap, int width, int height, byte[] alpha)
         {
@@ -26,6 +30,25 @@ namespace HanaDesktopPet.Windows
             Alpha = alpha;
             // Account for the decoded source, converted Pbgra32 surface and alpha hit map.
             ByteCost = (long)width * height * 9L;
+
+            int first = -1;
+            int last = -1;
+            for (int row = 0; row < height; row++)
+            {
+                bool opaque = false;
+                int start = row * width;
+                for (int column = 0; column < width; column++)
+                {
+                    if (alpha[start + column] >= 32) { opaque = true; break; }
+                }
+                if (opaque)
+                {
+                    if (first < 0) first = row;
+                    last = row;
+                }
+            }
+            ContentTop = first < 0 ? 0 : first;
+            ContentHeight = last < first ? height : last - first + 1;
         }
 
         public byte AlphaAt(int x, int y)
@@ -148,6 +171,55 @@ namespace HanaDesktopPet.Windows
             if (!_characters.TryGetValue(characterId ?? String.Empty, out character))
                 return new HashSet<string>(StringComparer.Ordinal);
             return new HashSet<string>(character.PoseNames, StringComparer.Ordinal);
+        }
+
+        /// <summary>
+        /// Reads an optional, non-catalog image such as the shared basin artwork. Only
+        /// plain relative bundle names are accepted, and a missing file is not an error:
+        /// the caller falls back to its drawn basin.
+        /// </summary>
+        public byte[] ReadOptionalImage(string relativePath)
+        {
+            if (String.IsNullOrEmpty(relativePath) || relativePath.IndexOf('\\') >= 0 ||
+                relativePath.IndexOf(':') >= 0 || relativePath.IndexOf("..") >= 0)
+                return null;
+            try
+            {
+                return _store.ReadAllBytes(relativePath);
+            }
+            catch (InvalidDataException) { return null; }
+            catch (FileNotFoundException) { return null; }
+            catch (IOException) { return null; }
+        }
+
+        /// <summary>
+        /// Decodes an optional image, or returns null when it is absent or unreadable.
+        /// Used for the double-click basin, which must never take the artwork path down.
+        /// </summary>
+        public BitmapSource DecodeOptionalImage(string relativePath)
+        {
+            byte[] bytes = ReadOptionalImage(relativePath);
+            if (bytes == null || bytes.Length == 0) return null;
+            try
+            {
+                BitmapImage decoded = new BitmapImage();
+                using (MemoryStream stream = new MemoryStream(bytes, false))
+                {
+                    decoded.BeginInit();
+                    decoded.CacheOption = BitmapCacheOption.OnLoad;
+                    decoded.CreateOptions = BitmapCreateOptions.PreservePixelFormat;
+                    decoded.StreamSource = stream;
+                    decoded.EndInit();
+                }
+                if (decoded.PixelWidth <= 0 || decoded.PixelHeight <= 0 ||
+                    decoded.PixelWidth > MaximumImageDimension || decoded.PixelHeight > MaximumImageDimension)
+                    return null;
+                decoded.Freeze();
+                return decoded;
+            }
+            catch (InvalidDataException) { return null; }
+            catch (NotSupportedException) { return null; }
+            catch (IOException) { return null; }
         }
 
         public PetArtwork GetArtwork(string characterId, string poseName)

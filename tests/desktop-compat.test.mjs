@@ -2,7 +2,7 @@
  * 控制台与桌宠的兼容关系守卫。
  *
  * 公开基线是控制台 0.6.6（协议 v3），它只能配 Windows 0.2.0 / macOS 0.5.8；
- * 本地 0.6.7 候选是协议 v4，配 Windows 0.3.0 / macOS 0.5.9。两套下载地址都是
+ * 本地 0.6.7 候选是协议 v4，控制台下载地址配 Windows 0.3.0 / macOS 0.5.9。两套下载地址都是
  * 固定白名单，不随“最新版”漂移。
  *
  * 兼容判定按协议版本与所需字段/能力，而不是“版本号相等”：将来控制台小版本
@@ -64,15 +64,35 @@ function zipText(archive, entry) {
   return execFileSync("unzip", ["-p", archive, entry], { encoding: "utf8", maxBuffer: 32 * 1024 * 1024 });
 }
 
+function versionParts(version) {
+  return String(version).split(".").map((part) => Number.parseInt(part, 10) || 0);
+}
+
+/** True when `candidate` is the same or a newer release than `floor` (numeric, per part). */
+function versionAtLeast(candidate, floor) {
+  const left = versionParts(candidate);
+  const right = versionParts(floor);
+  for (let index = 0; index < Math.max(left.length, right.length); index += 1) {
+    const a = left[index] ?? 0;
+    const b = right[index] ?? 0;
+    if (a !== b) return a > b;
+  }
+  return true;
+}
+
 test("the current console candidate pairs with the desktop versions in the compatibility table", () => {
   const expected = COMPATIBILITY[MANIFEST.version];
   assert.ok(expected, `console ${MANIFEST.version} has no declared desktop pairing`);
-  assert.equal(WINDOWS_VERSION.version, expected.windowsVersion,
-    `console ${MANIFEST.version} must pair with its declared Windows build`);
+  // What pairs the console is its allow-list: the builds it downloads for this protocol.
+  // The desktop sources in this repo may already be a newer patch of the same protocol
+  // (e.g. 0.3.1 / 0.5.10 while the console still links 0.3.0 / 0.5.9), but they must never
+  // be older than the build the console points at.
+  assert.ok(versionAtLeast(WINDOWS_VERSION.version, expected.windowsVersion),
+    `Windows ${WINDOWS_VERSION.version} is older than the paired ${expected.windowsVersion}`);
   assert.equal(WINDOWS_VERSION.protocolVersion, expected.protocol,
     "the Windows package declares the console's protocol");
-  assert.equal(MAC_VERSION, expected.macVersion,
-    `console ${MANIFEST.version} must pair with its declared macOS build`);
+  assert.ok(versionAtLeast(MAC_VERSION, expected.macVersion),
+    `macOS ${MAC_VERSION} is older than the paired ${expected.macVersion}`);
 
   assert.deepEqual(panelUrls(PANEL_SOURCE), {
     windows: expected.windows,

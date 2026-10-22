@@ -30,6 +30,7 @@ namespace HanaDesktopPet.Core.Tests
             CheckSwampedWorkRhythm();
             CheckSpotlightAndCompletionNotice();
             CheckNoticeCenterAndBubbleLayout();
+            BasinChecks.Run();
             SubtitleChecks.Run();
         }
 

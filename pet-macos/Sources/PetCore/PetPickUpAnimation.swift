@@ -15,6 +15,13 @@ public struct PetPickUpAnimation: Equatable, Sendable {
     /// Catalog pose names, in playback order.
     public static let framePoseNames = ["picked-up", "picked-up-2"]
 
+    /// True for the dangling frames. Those are drawn smaller than the canvas, so the
+    /// renderer fits their visible content to the normal character height instead of using
+    /// the frame's own size.
+    public static func isPickUpPose(_ poseName: String) -> Bool {
+        framePoseNames.contains(poseName)
+    }
+
     private var startedAt: TimeInterval?
 
     public init() {}

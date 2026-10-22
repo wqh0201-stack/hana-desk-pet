@@ -71,6 +71,20 @@ export function verifyWindowsAssets(preparedRoot = path.join(ROOT, '.build/windo
   for (const file of ['CHARACTERS-LICENSE.md', 'ATTRIBUTION.md', 'pet-lines.json']) {
     if (!read(path.join(sourceRoot, file)).equals(read(path.join(artworkRoot, file)))) throw new Error(`License, attribution or subtitle table changed: ${file}`);
   }
+  // The double-click basin is a shared prop, not a character pose: it is recorded apart
+  // from the pose conversion list and must stay byte-identical to the canonical artwork.
+  const sharedRecords = Array.isArray(manifest.sharedAssets) ? manifest.sharedAssets : [];
+  if (sharedRecords.length !== 1) throw new Error('Prepared assets must record exactly one shared prop');
+  const sharedRecord = sharedRecords[0];
+  if (sharedRecord.source !== 'shared/basin.png' || sharedRecord.output !== 'shared/basin.png') throw new Error('Unexpected shared prop record');
+  const sharedSource = read(regular(path.join(sourceRoot, 'shared/basin.png')));
+  const sharedOutput = read(regular(path.join(artworkRoot, 'shared/basin.png')));
+  if (!sharedOutput.equals(sharedSource) || sharedRecord.sourceSHA256 !== hash(sharedSource) || sharedRecord.outputSHA256 !== hash(sharedOutput)) {
+    throw new Error('Shared basin artwork changed');
+  }
+  const [basinWidth, basinHeight] = pngSize(sharedOutput);
+  if (basinWidth !== sharedRecord.width || basinHeight !== sharedRecord.height) throw new Error('Shared basin dimensions differ');
+  expected.add('shared/basin.png');
   const actual = walk(artworkRoot).map(file => file.relative);
   if (actual.length !== expected.size || actual.some(file => !expected.has(file))) throw new Error('Unexpected artwork file outside catalog');
   const icon = read(regular(path.join(preparedRoot, 'App.ico')));

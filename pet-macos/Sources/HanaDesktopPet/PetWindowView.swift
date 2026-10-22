@@ -4,10 +4,13 @@ import PetCore
 final class PetWindowView: NSView, NSMenuDelegate {
     private let model: PetViewModel
     private let artwork: PetCharacterView
+    private let layout: PetCharacterLayout
     private let bubble = PetBubbleController()
     private var refreshTimer: Timer?
     private var avoidanceTimer: Timer?
     private var pointerGesture = PetDragClickGesture()
+    private var clickTracker = PetDoubleClickTracker()
+    private var basinDebugPanel: PetBasinDebugController?
     private var eventPolicy = PetWindowEventPolicy()
     private var dragStartWindowOrigin: NSPoint?
     private weak var attachedWindow: NSWindow?
@@ -19,6 +22,7 @@ final class PetWindowView: NSView, NSMenuDelegate {
         poseReadback: PetPoseReadbackStore = .shared
     ) {
         self.model = model
+        self.layout = layout
         self.artwork = PetCharacterView(
             catalog: artworkCatalog,
             layout: layout,
@@ -111,7 +115,8 @@ final class PetWindowView: NSView, NSMenuDelegate {
             followMode: state.displayFollowMode,
             concurrentSessions: state.displayConcurrentSessions,
             notifications: state.displayNotifications,
-            noticesEnabled: model.showNotices
+            noticesEnabled: model.showNotices,
+            basinConfig: model.basinConfig(for: state.selection.characterId)
         )
         refreshBubble()
         needsDisplay = true
@@ -124,7 +129,10 @@ final class PetWindowView: NSView, NSMenuDelegate {
             enabled: model.showNotices,
             reduceMotion: artwork.reduceMotionEnabled,
             petWindow: window,
-            petArtworkTopInset: artwork.artworkTopInset()
+            // The window keeps transparent room above the artwork for the basin pile. The
+            // bubble hangs from the pile's top, so a notice never covers it, and with no
+            // basins it sits exactly on the artwork line as before.
+            petArtworkTopInset: artwork.artworkTopInset() - artwork.basinPileRise
         )
     }
 
@@ -156,6 +164,8 @@ final class PetWindowView: NSView, NSMenuDelegate {
             translation: translation,
             positionLocked: model.positionLocked
         ) else { return }
+        // A drag is never half of a double click, even if the pointer comes back to rest.
+        clickTracker.reset()
         window.setFrameOrigin(NSPoint(
             x: dragStartWindowOrigin.x + translation.x,
             y: dragStartWindowOrigin.y + translation.y
@@ -179,10 +189,22 @@ final class PetWindowView: NSView, NSMenuDelegate {
         guard shouldActivate,
               let artworkPoint = artworkPoint(for: event),
               artwork.hitShapeContains(artworkPoint) else { return }
+        let isDoubleClick = clickTracker.register(
+            at: ProcessInfo.processInfo.systemUptime,
+            interval: NSEvent.doubleClickInterval
+        )
+        guard !isDoubleClick else {
+            // The first click already answered. The second one drops a basin instead of
+            // restarting the reaction, so a double click does not read as two taps.
+            artwork.addBasin()
+            refreshBubble()
+            return
+        }
         activatePet()
     }
 
     override func cancelOperation(_ sender: Any?) {
+        clickTracker.reset()
         pointerGesture.cancel()
         dragStartWindowOrigin = nil
         eventPolicy.cancelPointerSequence()
@@ -212,6 +234,15 @@ final class PetWindowView: NSView, NSMenuDelegate {
         notices.target = self
         notices.state = model.showNotices ? .on : .off
         menu.addItem(notices)
+
+        // Per-character basin debug panel: width, x offset and y offset with live preview.
+        let basinDebug = NSMenuItem(
+            title: "铁盆调试…（\(basinDebugReadout)）",
+            action: #selector(showBasinDebugPanel),
+            keyEquivalent: ""
+        )
+        basinDebug.target = self
+        menu.addItem(basinDebug)
 
         let dock = NSMenuItem(title: "停靠并锁定到角落", action: nil, keyEquivalent: "")
         let corners = NSMenu()
@@ -269,6 +300,7 @@ final class PetWindowView: NSView, NSMenuDelegate {
     }
 
     func menuWillOpen(_ menu: NSMenu) {
+        clickTracker.reset()
         eventPolicy.menuDidOpen()
         artwork.endDragPickUp()
         synchronizeMouseAvoidance()
@@ -296,6 +328,43 @@ final class PetWindowView: NSView, NSMenuDelegate {
         model.setShowNotices(!model.showNotices)
     }
 
+    private var basinDebugReadout: String {
+        let roleId = model.state.selection.characterId
+        let config = model.basinConfig(for: roleId)
+        return String(format: "%@ %.0f×%.0f", roleId, PetBasinStack.width(config), PetBasinStack.height(config))
+    }
+
+    @objc private func showBasinDebugPanel() {
+        let roleId = model.state.selection.characterId
+        let config = model.basinConfig(for: roleId)
+        if let controller = basinDebugPanel {
+            controller.reload(roleId: roleId, config: config)
+            controller.present(relativeTo: window)
+            return
+        }
+        let controller = PetBasinDebugController(
+            roleId: roleId,
+            config: config,
+            resolve: { [weak self] roleId in
+                self?.model.basinConfig(for: roleId) ?? .fallback
+            },
+            onPreview: { [weak self] roleId, config in
+                self?.model.setBasinPreview(roleId: roleId, config: config)
+            },
+            onSave: { [weak self] roleId, config in
+                self?.model.setBasinConfig(config, for: roleId)
+            },
+            onReset: { [weak self] roleId in
+                self?.model.resetBasinConfig(for: roleId)
+            },
+            onClose: { [weak self] _ in
+                self?.basinDebugPanel = nil
+            }
+        )
+        basinDebugPanel = controller
+        controller.present(relativeTo: window)
+    }
+
     @objc private func dockToCorner(_ sender: NSMenuItem) {
         guard let identifier = sender.representedObject as? String,
               let window,
@@ -304,7 +373,13 @@ final class PetWindowView: NSView, NSMenuDelegate {
         let frame = window.frame
         let margin: CGFloat = 12
         let x = identifier.hasSuffix("left") ? visible.minX + margin : visible.maxX - frame.width - margin
-        let y = identifier.hasPrefix("top") ? visible.maxY - frame.height - margin : visible.minY + margin
+        // The window carries transparent room above the artwork for the basin pile, so the
+        // top corners line up the artwork rather than the (taller) frame: the pet stays the
+        // same distance from the screen edge whether or not basins are dropped.
+        let reserve = CGFloat(layout.basinTopReserve)
+        let y = identifier.hasPrefix("top")
+            ? visible.maxY - frame.height - margin + reserve
+            : visible.minY + margin
         window.setFrameOrigin(NSPoint(x: x, y: y))
         model.setPositionLocked(true)
     }
@@ -334,6 +409,13 @@ private final class PetCharacterView: NSView {
     private var moodTracker = PetPoseMoodTracker()
     private var workScheduler = PetWorkPoseScheduler()
     private var pickUp = PetPickUpAnimation()
+    /// Double-click basins. Presentation only: the pile never writes a pose, the activity
+    /// state or the work clock, and it owns no timer of its own.
+    private var basins = PetBasinStack()
+    /// Per-character basin geometry (width, x/y offset), resolved by the view model.
+    private var basinConfig = PetBasinConfig.fallback
+    private var basinImageCache: [String: NSImage] = [:]
+    private var basinImageMissing: Set<String> = []
     private var currentSessionId: String?
     private var currentHint: PetActivityHint?
     private var currentToolName: String?
@@ -380,7 +462,7 @@ private final class PetCharacterView: NSView {
         setAccessibilityElement(true)
         setAccessibilityRole(.button)
         setAccessibilityLabel("Claude 桌宠")
-        setAccessibilityHelp("单击回应；拖动移动；右键打开角色菜单")
+        setAccessibilityHelp("单击回应；双击扣铁盆；拖动移动；右键打开角色菜单")
         observeSystemPreferences()
     }
 
@@ -472,7 +554,8 @@ private final class PetCharacterView: NSView {
         followMode: PetFollowMode,
         concurrentSessions: Int,
         notifications: [PetNotice],
-        noticesEnabled: Bool
+        noticesEnabled: Bool,
+        basinConfig: PetBasinConfig = .fallback
     ) {
         let roleChanged = self.roleId != roleId
         let sessionChanged = currentSessionId != sessionId
@@ -487,6 +570,11 @@ private final class PetCharacterView: NSView {
         self.currentConcurrentSessions = max(0, concurrentSessions)
         self.currentNotifications = notifications
         self.noticesEnabled = noticesEnabled
+        let nextBasinConfig = basinConfig.clamped()
+        if self.basinConfig != nextBasinConfig {
+            self.basinConfig = nextBasinConfig
+            needsDisplay = true
+        }
         let poses = catalog?.poseNames(forCharacterID: roleId) ?? []
         let preferredPose = PetPosePlanner.preferredPose(for: status, toolName: toolName, hint: hint)
         let resolvedPose = PetPosePlanner.resolvedPose(preferred: preferredPose, availablePoseNames: poses)
@@ -502,6 +590,9 @@ private final class PetCharacterView: NSView {
         if roleChanged {
             clearArtworkCache()
             timeline = PetPoseTimeline(initialPose: resolvedPose)
+            // Basins belong to the character that was wearing them.
+            basins.clear()
+            needsDisplay = true
         }
         if sessionChanged {
             // A new session inherits neither the previous session's display history nor its
@@ -561,6 +652,20 @@ private final class PetCharacterView: NSView {
         pickUp.end()
         let now = ProcessInfo.processInfo.systemUptime
         applyLatestState(at: now)
+    }
+
+    /// Drops one more basin on the character. Called only from a completed double click.
+    func addBasin() {
+        let now = ProcessInfo.processInfo.systemUptime
+        basins.add(at: now)
+        applyLatestState(at: now)
+        needsDisplay = true
+    }
+
+    /// How far the current pile reaches above the artwork's top edge, in points. The window
+    /// bubble hangs from this line so a notice never covers the pile.
+    var basinPileRise: Double {
+        PetBasinStack.pileTopRise(count: basins.count, config: basinConfig)
     }
 
     func reactToTap() {
@@ -780,6 +885,7 @@ private final class PetCharacterView: NSView {
             moodTracker.nextDeadline(after: time),
             workScheduler.nextDeadline(after: time),
             pickUp.nextDeadline(after: time, reduceMotion: reduceMotion),
+            basins.nextDeadline(after: time, reduceMotion: reduceMotion),
             spotlightHold.nextDeadline(after: time),
             noticeCenter.currentPresentation()?.endsAt,
             subtitleFrame.nextDeadline,
@@ -873,12 +979,25 @@ private final class PetCharacterView: NSView {
         artworkUseOrder.removeAll(keepingCapacity: true)
     }
 
-    private func imageRect(for frame: PetArtworkFrame) -> NSRect {
-        let rect = layout.imageRect(
-            containerWidth: Double(bounds.width),
-            sourceWidth: Double(frame.width),
-            sourceHeight: Double(frame.height)
-        )
+    private func imageRect(for frame: PetArtworkFrame, poseName: String) -> NSRect {
+        let rect: PetPoseRect
+        if PetPickUpAnimation.isPickUpPose(poseName) {
+            // The dangling frames draw the character smaller than their canvas; fit the
+            // visible content to the normal character height so the body does not shrink.
+            rect = layout.contentFittedImageRect(
+                containerWidth: Double(bounds.width),
+                frameWidth: Double(frame.width),
+                frameHeight: Double(frame.height),
+                contentTop: Double(frame.contentTop),
+                contentHeight: Double(frame.contentHeight)
+            )
+        } else {
+            rect = layout.imageRect(
+                containerWidth: Double(bounds.width),
+                sourceWidth: Double(frame.width),
+                sourceHeight: Double(frame.height)
+            )
+        }
         return NSRect(x: rect.x, y: rect.y, width: rect.width, height: rect.height)
     }
 
@@ -907,7 +1026,7 @@ private final class PetCharacterView: NSView {
         for layer in timeline.visibleLayers(at: now) where layer.opacity > 0.001 {
             guard let artwork = artwork(for: layer.poseName) else { continue }
             let frame = artwork.frame
-            let rect = imageRect(for: frame)
+            let rect = imageRect(for: frame, poseName: layer.poseName)
             guard rect.width > 0, rect.height > 0, rect.contains(canonicalPoint) else { continue }
             let xFraction = (canonicalPoint.x - rect.minX) / rect.width
             let yFractionFromBottom = (canonicalPoint.y - rect.minY) / rect.height
@@ -936,7 +1055,10 @@ private final class PetCharacterView: NSView {
         let now = ProcessInfo.processInfo.systemUptime
         advanceTimeline(at: now)
         let layers = timeline.visibleLayers(at: now)
-        guard !layers.isEmpty else { return }
+        guard !layers.isEmpty else {
+            drawBasins(at: now)
+            return
+        }
         let motion = currentMotion()
         let pivot = NSPoint(x: motion.center.x, y: motion.center.y)
 
@@ -950,7 +1072,7 @@ private final class PetCharacterView: NSView {
         for layer in layers where layer.opacity > 0.001 {
             guard let artwork = artwork(for: layer.poseName) else { continue }
             artwork.image.draw(
-                in: imageRect(for: artwork.frame),
+                in: imageRect(for: artwork.frame, poseName: layer.poseName),
                 from: .zero,
                 operation: .sourceOver,
                 fraction: CGFloat(layer.opacity),
@@ -959,5 +1081,40 @@ private final class PetCharacterView: NSView {
             )
         }
         NSGraphicsContext.restoreGraphicsState()
+        // The pile follows the window, not the pose: it is drawn after the motion transform
+        // so bobbing, sway and the pick-up frames never tilt or wobble it.
+        drawBasins(at: now)
+    }
+
+    private func drawBasins(at time: TimeInterval) {
+        let placements = basins.placements(at: time, reduceMotion: reduceMotion)
+        guard !placements.isEmpty else { return }
+        let artworkTop = layout.bottomInset + layout.displayHeight
+        let baseCenter = NSPoint(
+            x: bounds.midX + CGFloat(basinConfig.xOffset),
+            y: CGFloat(artworkTop - PetBasinStack.baseCenterOffsetBelowArtworkTop(basinConfig))
+        )
+        PetBasinRenderer.draw(placements, baseCenter: baseCenter, image: basinImage(), config: basinConfig)
+    }
+
+    /// The basin artwork: a per-character override first, then the shared one shipped in
+    /// the bundle. `nil` lets the renderer fall back to its vector basin, so a missing or
+    /// unreadable file degrades to a drawn basin instead of dropping the feature.
+    private func basinImage() -> NSImage? {
+        if let cached = basinImageCache[roleId] { return cached }
+        guard !basinImageMissing.contains(roleId), let root = Bundle.main.resourceURL else { return nil }
+        let crossPet = root.appendingPathComponent("CrossPet", isDirectory: true)
+        let candidates = [
+            crossPet.appendingPathComponent(roleId, isDirectory: true).appendingPathComponent("basin.png"),
+            crossPet.appendingPathComponent("shared", isDirectory: true).appendingPathComponent("basin.png"),
+        ]
+        guard let image = candidates.lazy.compactMap({ NSImage(contentsOf: $0) }).first else {
+            // A missing or unreadable file is remembered, so a running animation never
+            // touches the bundle once per frame.
+            basinImageMissing.insert(roleId)
+            return nil
+        }
+        basinImageCache[roleId] = image
+        return image
     }
 }

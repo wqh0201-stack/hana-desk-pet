@@ -47,6 +47,24 @@ test("generated pose index and WebP files match in both directions", () => {
   }
 });
 
+test("the shared double-click basin ships byte-identical and keeps its display aspect", () => {
+  const canonical = path.join(SOURCE_ROOT, "shared/basin.png");
+  const native = path.join(ROOT, "pet-macos/Sources/HanaDesktopPet/Resources/CrossPet/shared/basin.png");
+  assert.ok(fs.existsSync(canonical), "the canonical shared basin artwork must exist");
+  assert.ok(fs.existsSync(native), "the macOS bundle must carry the shared basin artwork");
+  assert.deepEqual(fs.readFileSync(native), fs.readFileSync(canonical),
+    "the bundled basin copy must be byte-identical to the canonical artwork");
+  const bytes = fs.readFileSync(canonical);
+  assert.equal(bytes.toString("latin1", 1, 4), "PNG", "the basin artwork must be a PNG");
+  const width = bytes.readUInt32BE(16);
+  const height = bytes.readUInt32BE(20);
+  assert.ok(width > 0 && height > 0, "the basin artwork must declare a real size");
+  // The native renderer draws it into a 92×70 pt rect at scale 1; a wildly different source
+  // aspect would distort it, so the asset and the geometry have to stay in the same family.
+  const aspect = width / height;
+  assert.ok(aspect > 2.3 && aspect < 2.7, `the basin artwork aspect ${aspect.toFixed(3)} no longer matches the renderer`);
+});
+
 test("the pick-up frames ship in both the native resources and the console previews, byte-identical", () => {
   const SOURCE_ASSETS = path.join(ROOT, "assets/crosspet");
   const NATIVE_ASSETS = path.join(ROOT, "pet-macos/Sources/HanaDesktopPet/Resources/CrossPet");

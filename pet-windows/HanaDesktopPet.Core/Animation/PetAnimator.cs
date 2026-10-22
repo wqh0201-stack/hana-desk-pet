@@ -26,10 +26,15 @@ namespace HanaDesktopPet.Core
         public PetNoticePresentation Notice { get; private set; }
         /// <summary>The resolved bubble: a notice, a status subtitle, or null when hidden.</summary>
         public PetBubbleContent Bubble { get; private set; }
+        /// <summary>The double-click basin pile, bottom-up. Empty when nothing is on the head.</summary>
+        public IReadOnlyList<PetBasinPlacement> Basins { get; private set; }
+
+        private static readonly IReadOnlyList<PetBasinPlacement> NoBasins =
+            new List<PetBasinPlacement>().AsReadOnly();
 
         public PetRenderFrame(string characterId, string pose, bool fallback,
             IReadOnlyList<PetPoseLayer> layers, double? nextWakeAt, PetNoticePresentation notice = null,
-            PetBubbleContent bubble = null)
+            PetBubbleContent bubble = null, IReadOnlyList<PetBasinPlacement> basins = null)
         {
             CharacterId = characterId;
             Pose = pose;
@@ -38,6 +43,7 @@ namespace HanaDesktopPet.Core
             NextWakeAt = nextWakeAt;
             Notice = notice;
             Bubble = bubble;
+            Basins = basins ?? NoBasins;
         }
     }
 
@@ -58,6 +64,7 @@ namespace HanaDesktopPet.Core
         private readonly PetPickUpAnimation _pickUp = new PetPickUpAnimation();
         private readonly PetSpotlightHold _spotlightHold = new PetSpotlightHold();
         private readonly PetNoticeCenter _noticeCenter = new PetNoticeCenter();
+        private readonly PetBasinStack _basins = new PetBasinStack();
         private PetSubtitleSelector _subtitle;
         private PetSubtitleFrame _subtitleFrame;
         private PetViewState _lastState;
@@ -124,6 +131,8 @@ namespace HanaDesktopPet.Core
                 _timeline = new PetPoseTimeline();
                 _isDragging = false;
                 _pickUp.End();
+                // Basins belong to the character that was wearing them.
+                _basins.Clear();
             }
             if (sessionChanged)
             {
@@ -260,6 +269,7 @@ namespace HanaDesktopPet.Core
                 AddDeadline(deadlines, _spotlightHold.NextDeadline(now));
                 AddDeadline(deadlines, _noticeCenter.NextDeadline(now));
                 if (_subtitleFrame != null) AddDeadline(deadlines, _subtitleFrame.NextDeadline);
+                AddDeadline(deadlines, _basins.NextDeadline(now, reduceMotion));
                 if (deadlines.Count > 0) nextWakeAt = deadlines.Min();
             }
 
@@ -271,7 +281,24 @@ namespace HanaDesktopPet.Core
                 targetFallback = false;
 
             return new PetRenderFrame(characterId, targetPose, !pickUpOwnsArtwork && targetFallback,
-                new List<PetPoseLayer>(layers).AsReadOnly(), nextWakeAt, noticeTick.Presentation, bubble);
+                new List<PetPoseLayer>(layers).AsReadOnly(), nextWakeAt, noticeTick.Presentation, bubble,
+                new List<PetBasinPlacement>(_basins.Placements(now, reduceMotion)).AsReadOnly());
+        }
+
+        /// <summary>
+        /// Drops one more basin on the character. Presentation only: it never writes a pose,
+        /// the activity state or the work clock.
+        /// </summary>
+        public void AddBasin(double nowSeconds)
+        {
+            double now = NormalizeTime(nowSeconds);
+            _basins.Add(now);
+            RefreshLastState(now);
+        }
+
+        public void ClearBasins()
+        {
+            _basins.Clear();
         }
 
         public void Tap(double nowSeconds)

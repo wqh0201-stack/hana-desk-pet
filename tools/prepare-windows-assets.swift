@@ -138,6 +138,29 @@ do {
         characters[index]["generatedPoses"] = (characters[index]["generatedPoses"] as? [String] ?? []).map { String($0.dropLast(5)) + ".png" }
     }
     document["characters"] = characters
+    // The shared basin artwork is not a catalog pose: it is one optional prop drawn by the
+    // double-click pile. It is copied as-is (already PNG) and recorded apart from the pose
+    // conversion list, so the pose count keeps meaning "character poses".
+    var sharedAssets: [[String: Any]] = []
+    let sharedBasin = sourceRoot.appendingPathComponent("shared/basin.png")
+    if manager.fileExists(atPath: sharedBasin.path) {
+        let sharedDirectory = artworkRoot.appendingPathComponent("shared", isDirectory: true)
+        try manager.createDirectory(at: sharedDirectory, withIntermediateDirectories: true)
+        let data = try Data(contentsOf: sharedBasin)
+        let sourceImage = try readImage(sharedBasin)
+        let target = sharedDirectory.appendingPathComponent("basin.png")
+        try data.write(to: target)
+        let decoded = try readImage(target)
+        guard decoded.width == sourceImage.width, decoded.height == sourceImage.height,
+              try rgba(decoded) == rgba(sourceImage) else { fail("Shared basin PNG changed decoded pixels") }
+        sharedAssets.append([
+            "source": "shared/basin.png", "output": "shared/basin.png",
+            "sourceSHA256": hash(data), "outputSHA256": hash(data),
+            "width": sourceImage.width, "height": sourceImage.height,
+        ])
+    } else {
+        fail("Missing shared basin artwork: shared/basin.png")
+    }
     var handling = document["assetHandling"] as? [String: Any] ?? [:]
     handling["format"] = "Windows runtime copies are losslessly converted from catalog-listed WebP to PNG. Source filenames and both SHA-256 hashes are recorded in build-manifest.json; decoded premultiplied sRGB RGBA pixels were compared during conversion."
     handling["windowsConversion"] = ["sourceCatalog": "source-catalog.json", "manifest": "build-manifest.json", "license": "CC BY-NC-SA 4.0", "commercialUseAllowed": false]
@@ -159,10 +182,11 @@ do {
     """
     try Data(note.utf8).write(to: artworkRoot.appendingPathComponent("WINDOWS-ASSETS.md"))
     let iconData = try icon(try readImage(iconURL))
-    let manifest: [String: Any] = ["schemaVersion": 1, "sourceCatalogSHA256": hash(catalogData), "iconSourceSHA256": hash(try Data(contentsOf: iconURL)), "iconSHA256": hash(iconData), "poseCount": records.count, "upstreamCount": records.count - generatedCount, "generatedCount": generatedCount, "assets": records]
+    let manifest: [String: Any] = ["schemaVersion": 1, "sourceCatalogSHA256": hash(catalogData), "iconSourceSHA256": hash(try Data(contentsOf: iconURL)), "iconSHA256": hash(iconData), "poseCount": records.count, "upstreamCount": records.count - generatedCount, "generatedCount": generatedCount, "assets": records, "sharedAssets": sharedAssets]
     try JSONSerialization.data(withJSONObject: manifest, options: [.prettyPrinted, .sortedKeys]).write(to: artworkRoot.appendingPathComponent("build-manifest.json"))
     try iconData.write(to: outputRoot.appendingPathComponent("App.ico"))
     print("Windows assets: \(records.count) PNG; \(records.count - generatedCount) upstream + \(generatedCount) generated; all decoded pixels verified.")
+    if !sharedAssets.isEmpty { print("Windows shared props: \(sharedAssets.count) (shared/basin.png)") }
 } catch {
     try? manager.removeItem(at: outputRoot)
     fail("Windows asset preparation failed: \(error.localizedDescription)")

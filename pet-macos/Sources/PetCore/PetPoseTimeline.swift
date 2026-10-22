@@ -46,6 +46,10 @@ public struct PetCharacterLayout: Equatable, Sendable {
     public let bottomInset: Double
     public let horizontalInset: Double
     public let windowSize: PetPoseSize
+    /// Transparent room above the artwork reserved for a full basin pile plus the bubble
+    /// gap. The window is taller than the character by this much, so a pile never clips;
+    /// the bubble and the corner docking subtract it again to stay on the artwork line.
+    public let basinTopReserve: Double
 
     public init(maximumAspectRatio: Double) {
         let safeAspectRatio = maximumAspectRatio.isFinite
@@ -63,13 +67,16 @@ public struct PetCharacterLayout: Equatable, Sendable {
         let top = ceil(max(18, scale * (height * cosine + halfWidth * sine) - height + 8))
         let rotatedWidth = scale * (maximumWidth * cosine + height * sine)
 
+        let basinReserve = PetBasinStack.topReserve(artworkTopPadding: top, config: PetBasinStack.reserveConfig)
+
         self.maximumAspectRatio = safeAspectRatio
         self.displayHeight = height
         self.bottomInset = bottom
         self.horizontalInset = sideInset
+        self.basinTopReserve = basinReserve
         self.windowSize = PetPoseSize(
             width: ceil(rotatedWidth + 2 * sideInset),
-            height: ceil(height + bottom + top)
+            height: ceil(height + bottom + top + basinReserve)
         )
     }
 
@@ -97,6 +104,40 @@ public struct PetCharacterLayout: Equatable, Sendable {
 
     public var artworkAnchor: PetPosePoint {
         PetPosePoint(x: windowSize.width / 2, y: bottomInset)
+    }
+
+    /// Rect for a frame whose drawn character is smaller than its canvas — the dangling
+    /// pick-up frames. The opaque content is scaled up to `displayHeight` and its top edge is
+    /// put on the artwork's top edge, so being picked up no longer shrinks the character and
+    /// its head stays on the same line as every other pose.
+    public func contentFittedImageRect(
+        containerWidth: Double,
+        frameWidth: Double,
+        frameHeight: Double,
+        contentTop: Double,
+        contentHeight: Double
+    ) -> PetPoseRect {
+        guard containerWidth.isFinite, frameWidth > 0, frameHeight > 0,
+              contentHeight > 0, contentHeight < frameHeight else {
+            return imageRect(containerWidth: containerWidth, sourceWidth: frameWidth, sourceHeight: frameHeight)
+        }
+        let scale = displayHeight / contentHeight
+        var width = frameWidth * scale
+        var height = frameHeight * scale
+        let availableWidth = max(0, containerWidth - 2 * horizontalInset)
+        if width > availableWidth, availableWidth > 0 {
+            // A very wide frame still has to fit the reserved width.
+            let shrink = availableWidth / width
+            width *= shrink
+            height *= shrink
+        }
+        let top = bottomInset + displayHeight + max(0, contentTop) * (height / frameHeight)
+        return PetPoseRect(x: (containerWidth - width) / 2, y: top - height, width: width, height: height)
+    }
+
+    /// Centre of the artwork rectangle, which is also the basin pile's reference line.
+    public var artworkCenter: PetPosePoint {
+        PetPosePoint(x: windowSize.width / 2, y: bottomInset + displayHeight / 2)
     }
 }
 

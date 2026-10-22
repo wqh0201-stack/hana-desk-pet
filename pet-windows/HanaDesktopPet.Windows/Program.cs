@@ -79,6 +79,13 @@ namespace HanaDesktopPet.Windows
                 if (PetRole.BuiltIns.Count != 7 || decoded != 211)
                     throw new InvalidDataException("Expected 7 built-in roles and 211 PNG images; decoded " + decoded + ".");
 
+                // The double-click basin is a shared prop outside the pose catalog. A single
+                // unreadable file must not take the artwork path down, but the shipped build
+                // has to carry it, so the self-check proves it decodes.
+                System.Windows.Media.Imaging.BitmapSource basin = catalog.DecodeOptionalImage("shared/basin.png");
+                if (basin == null || basin.PixelWidth <= 0 || basin.PixelHeight <= 0)
+                    throw new InvalidDataException("The shared basin artwork is missing or cannot be decoded.");
+
                 // The subtitle table is a native resource too. A table that fails to parse would
                 // silently degrade to notices-only, so the check has to read it, not just look
                 // for it in the index.
@@ -113,7 +120,8 @@ namespace HanaDesktopPet.Windows
                     throw new InvalidDataException("Expected " + expectedLines + " subtitle lines; parsed " +
                         subtitleLines + ".");
 
-                TryWriteOutput("Assets OK: 7 characters, 211 PNG images decoded, " + subtitleLines +
+                TryWriteOutput("Assets OK: 7 characters, 211 PNG images decoded, 1 shared basin (" +
+                    basin.PixelWidth + "x" + basin.PixelHeight + "), " + subtitleLines +
                     " subtitle lines parsed.");
                 return 0;
             }

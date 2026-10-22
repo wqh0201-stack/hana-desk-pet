@@ -22,6 +22,7 @@ struct PetCoreChecks {
         try testCharacterMotionGeometry()
         try testNoticeCenterAndSpotlightHold()
         try testBubbleLayout()
+        PetBasinChecks.run()
         try testHTTPParserLimits()
         try await testLoopbackServerRoundTrip()
         print("All PetCore checks passed.")

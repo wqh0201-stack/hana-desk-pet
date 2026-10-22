@@ -6,6 +6,8 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Interop;
 using System.Windows.Media;
+using System.Windows.Media.Imaging;
+using System.Windows.Shapes;
 using System.Windows.Threading;
 using Microsoft.Win32;
 using HanaDesktopPet.Core;
@@ -27,6 +29,7 @@ namespace HanaDesktopPet.Windows
         private const int MenuRoleBase = 100;
         private const int MenuToggleLock = 201;
         private const int MenuToggleNotices = 202;
+        private const int MenuBasinSize = 203;
         private const int MenuDockTopLeft = 301;
         private const int MenuDockTopRight = 302;
         private const int MenuDockBottomLeft = 303;
@@ -49,6 +52,13 @@ namespace HanaDesktopPet.Windows
         private readonly double _windowWidth;
         private readonly double _windowHeight;
         private readonly double _bottomInset;
+        private readonly double _artworkTopPadding;
+        private PetDoubleClickTracker _doubleClicks;
+        private PetBasinConfig _basinConfig = PetBasinConfig.Fallback;
+        private PetBasinConfig _basinPreview;
+        private PetBasinDebugWindow _basinDebugWindow;
+        private BitmapSource _basinImage;
+        private string _basinImageRole;
 
         private HwndSource _source;
         private IntPtr _hwnd;
@@ -96,6 +106,7 @@ namespace HanaDesktopPet.Windows
             _preferenceData = preferenceData;
             _positionLocked = preferenceData.PositionLocked;
             _showNotices = preferenceData.ShowNotices;
+            _basinConfig = ResolveBasinConfig(_state);
             _state = store.ViewState();
 
             double ratio = Math.Max(0.1, Math.Min(4.0, catalog.MaximumAspectRatio));
@@ -106,8 +117,11 @@ namespace HanaDesktopPet.Windows
             double top = Math.Ceiling(Math.Max(18.0, 1.055 * (DisplayHeight * Math.Cos(radians) + halfWidth * Math.Sin(radians)) - DisplayHeight + 8.0));
             double rotatedWidth = 1.055 * (maximumWidth * Math.Cos(radians) + DisplayHeight * Math.Sin(radians));
             _windowWidth = Math.Ceiling(rotatedWidth + 2.0 * HorizontalInset);
-            _windowHeight = Math.Ceiling(DisplayHeight + bottom + top);
+            // The window keeps transparent room above the character for the basin pile, so a
+            // full pile is never clipped and the bubble can hang above it.
+            _windowHeight = Math.Ceiling(DisplayHeight + bottom + top + PetBasinStack.TopReserve(top, PetBasinStack.ReserveConfig));
             _bottomInset = bottom;
+            _artworkTopPadding = top;
 
             Title = "Hana Desk Pet";
             Width = _windowWidth;
@@ -223,6 +237,11 @@ namespace HanaDesktopPet.Windows
             _isClosing = true;
             _stateTimer.Stop();
             _animationTimer.Stop();
+            if (_basinDebugWindow != null)
+            {
+                _basinDebugWindow.Close();
+                _basinDebugWindow = null;
+            }
             SystemEvents.UserPreferenceChanged -= OnUserPreferenceChanged;
             if (_source != null)
             {
@@ -313,6 +332,7 @@ namespace HanaDesktopPet.Windows
                 _preferences.Save(_preferenceData);
             }
             _state = next;
+            _basinConfig = ResolveBasinConfig(next);
             RefreshVisuals();
         }
 
@@ -336,7 +356,8 @@ namespace HanaDesktopPet.Windows
                 _bubble.HideNotice(_reduceMotion);
                 return;
             }
-            _bubble.SetPetArtworkTopInset(_artworkTopInset == Double.MaxValue ? 0.0 : _artworkTopInset);
+            double pileRise = PetBasinStack.PileTopRise(_frame.Basins == null ? 0 : _frame.Basins.Count, _basinConfig);
+            _bubble.SetPetArtworkTopInset(Math.Max(0.0, (_artworkTopInset == Double.MaxValue ? 0.0 : _artworkTopInset) - pileRise));
             _bubble.ShowBubble(_frame.Bubble, _frame.CharacterId, _reduceMotion, _hwnd);
         }
 
@@ -346,7 +367,10 @@ namespace HanaDesktopPet.Windows
             long generation = _renderGeneration;
             _canvas.Children.Clear();
             _displayedLayers.Clear();
-            _artworkTopInset = Double.MaxValue;
+            // The bubble hangs from the nominal artwork line, not from whichever pose is
+            // drawn: a content-fitted pick-up frame reaches above it and must not drag the
+            // bubble up and down while the character is being held.
+            _artworkTopInset = _windowHeight - _bottomInset - DisplayHeight;
             _errorBadge.Visibility = Visibility.Collapsed;
             _canvas.Children.Add(_errorBadge);
             Panel.SetZIndex(_errorBadge, Int32.MaxValue);
@@ -375,6 +399,7 @@ namespace HanaDesktopPet.Windows
                     break;
                 }
             }
+            if (error == null) DrawBasins();
 
             string readbackPose = _frame.Pose;
             bool readbackFallback = _frame.Fallback;
@@ -440,6 +465,28 @@ namespace HanaDesktopPet.Windows
             double left = (_windowWidth - width) / 2.0;
             double top = _windowHeight - _bottomInset - height;
 
+            // The dangling pick-up frames draw the character smaller than their canvas. Fit
+            // the visible content to the normal character height and put its top on the
+            // artwork line, so being picked up neither shrinks the body nor moves the head
+            // away from the basin pile.
+            if (Array.IndexOf(PetAnimator.PickUpPoseNameValues, layer.Pose) >= 0 &&
+                artwork.ContentHeight > 0 && artwork.ContentHeight < artwork.Height)
+            {
+                scale = DisplayHeight / artwork.ContentHeight;
+                width = artwork.Width * scale;
+                height = artwork.Height * scale;
+                double available = _windowWidth - 2.0 * HorizontalInset;
+                if (width > available && available > 0.0)
+                {
+                    double shrink = available / width;
+                    width *= shrink;
+                    height *= shrink;
+                }
+                left = (_windowWidth - width) / 2.0;
+                double artworkTop = _windowHeight - _bottomInset - DisplayHeight;
+                top = artworkTop - artwork.ContentTop * (height / artwork.Height);
+            }
+
             Image image = new Image();
             image.Source = artwork.Bitmap;
             image.Width = width;
@@ -450,7 +497,6 @@ namespace HanaDesktopPet.Windows
             RenderOptions.SetBitmapScalingMode(image, BitmapScalingMode.HighQuality);
             Canvas.SetLeft(image, left);
             Canvas.SetTop(image, top);
-            if (top < _artworkTopInset) _artworkTopInset = top;
             _canvas.Children.Add(image);
 
             DisplayedLayer displayed = new DisplayedLayer();
@@ -461,6 +507,120 @@ namespace HanaDesktopPet.Windows
             displayed.Width = width;
             displayed.Height = height;
             _displayedLayers.Add(displayed);
+        }
+
+        /// <summary>
+        /// Paints the double-click basin pile above the character. The pile follows the
+        /// window, not the pose: it is positioned from the artwork rectangle, so bobbing,
+        /// sway and the pick-up frames never move it.
+        /// </summary>
+        private void DrawBasins()
+        {
+            if (_frame == null || _frame.Basins == null || _frame.Basins.Count == 0) return;
+            if (_displayedLayers.Count == 0) return;
+            double artworkTop = _displayedLayers[0].Top;
+            double basinWidth = PetBasinStack.Width(_basinConfig);
+            double basinHeight = PetBasinStack.Height(_basinConfig);
+            double baseCenterY = artworkTop + PetBasinStack.BaseCenterOffsetBelowArtworkTop(_basinConfig);
+            double centerX = _windowWidth / 2.0 + _basinConfig.XOffset;
+            BitmapSource artwork = BasinImage();
+            for (int i = 0; i < _frame.Basins.Count; i++)
+            {
+                PetBasinPlacement placement = _frame.Basins[i];
+                if (placement == null || placement.Opacity <= 0.001) continue;
+                Canvas visual = CreateBasinVisual(artwork, placement.Opacity, basinWidth, basinHeight);
+                visual.Width = basinWidth;
+                visual.Height = basinHeight;
+                visual.IsHitTestVisible = false;
+                Canvas.SetLeft(visual, centerX - basinWidth / 2.0);
+                Canvas.SetTop(visual, baseCenterY - placement.Rise - basinHeight / 2.0);
+                Panel.SetZIndex(visual, 1000 + placement.Slot);
+                _canvas.Children.Add(visual);
+            }
+        }
+
+        /// <summary>
+        /// The basin artwork: a per-character override first, then the shared file from the
+        /// bundled assets. Null lets the renderer fall back to a vector basin, so a missing
+        /// or damaged file degrades to a drawn basin rather than dropping the feature.
+        /// </summary>
+        private BitmapSource BasinImage()
+        {
+            string role = _frame == null ? null : _frame.CharacterId;
+            if (String.Equals(role, _basinImageRole, StringComparison.Ordinal)) return _basinImage;
+            _basinImageRole = role;
+            _basinImage = null;
+            if (String.IsNullOrEmpty(role)) return null;
+            string[] candidates = new string[] { role + "/basin.png", "shared/basin.png" };
+            for (int i = 0; i < candidates.Length; i++)
+            {
+                BitmapSource decoded = _catalog.DecodeOptionalImage(candidates[i]);
+                if (decoded == null) continue;
+                _basinImage = decoded;
+                break;
+            }
+            return _basinImage;
+        }
+
+        private static Canvas CreateBasinVisual(BitmapSource artwork, double opacity, double width, double height)
+        {
+            Canvas host = new Canvas();
+            host.Opacity = Clamp(opacity, 0.0, 1.0);
+
+            Ellipse shadow = new Ellipse();
+            shadow.Width = width * 0.80;
+            shadow.Height = height * 0.08;
+            shadow.Fill = new SolidColorBrush(Color.FromArgb(46, 0, 0, 0));
+            Canvas.SetLeft(shadow, width * 0.10);
+            Canvas.SetTop(shadow, height * 0.94);
+            host.Children.Add(shadow);
+
+            if (artwork != null)
+            {
+                Image image = new Image();
+                image.Source = artwork;
+                image.Width = width;
+                image.Height = height;
+                image.Stretch = Stretch.Fill;
+                RenderOptions.SetBitmapScalingMode(image, BitmapScalingMode.HighQuality);
+                Canvas.SetLeft(image, 0.0);
+                Canvas.SetTop(image, 0.0);
+                host.Children.Add(image);
+                return host;
+            }
+
+            // Fallback shape: a clipped dome plus a rolled rim, matching the macOS vector basin.
+            Canvas dome = new Canvas();
+            dome.Width = width;
+            dome.Height = height;
+            dome.Clip = new RectangleGeometry(new Rect(0.0, 0.0, width, height * 0.80));
+            Ellipse body = new Ellipse();
+            body.Width = width;
+            body.Height = height;
+            body.Fill = BasinGradient(Color.FromRgb(209, 209, 209), Color.FromRgb(102, 102, 102));
+            dome.Children.Add(body);
+            host.Children.Add(dome);
+
+            Ellipse rim = new Ellipse();
+            rim.Width = width;
+            rim.Height = height * 0.22;
+            rim.Fill = BasinGradient(Color.FromRgb(140, 140, 140), Color.FromRgb(184, 184, 184));
+            Canvas.SetTop(rim, height * 0.78);
+            host.Children.Add(rim);
+
+            Ellipse glint = new Ellipse();
+            glint.Width = width * 0.26;
+            glint.Height = height * 0.16;
+            glint.Fill = new SolidColorBrush(Color.FromArgb(158, 255, 255, 255));
+            Canvas.SetLeft(glint, width * 0.20);
+            Canvas.SetTop(glint, height * 0.34);
+            host.Children.Add(glint);
+            return host;
+        }
+
+        private static LinearGradientBrush BasinGradient(Color from, Color to)
+        {
+            return new LinearGradientBrush(from, to, new Point(0.15, 0.0), new Point(0.85, 1.0));
         }
 
         private void ShowArtworkError(string message)
@@ -585,6 +745,8 @@ namespace HanaDesktopPet.Windows
             if (!_didDrag)
             {
                 _didDrag = true;
+                // A drag is never half of a double click, even if the pointer comes back to rest.
+                _doubleClicks.Reset();
                 _animator.BeginDrag(NowSeconds());
             }
             MoveWindowTo(_windowOrigin.Left + (int)dx, _windowOrigin.Top + (int)dy);
@@ -603,6 +765,7 @@ namespace HanaDesktopPet.Windows
                 if (!_pointerMoved && dx * dx + dy * dy >= 16L)
                 {
                     _pointerMoved = true;
+                    _doubleClicks.Reset();
                     if (!_positionLocked)
                     {
                         _didDrag = true;
@@ -630,7 +793,13 @@ namespace HanaDesktopPet.Windows
             }
             else if (click)
             {
-                _animator.Tap(now);
+                // The first click of a pair already answered. The second one drops a basin
+                // instead of restarting the reaction, so a double click does not read as
+                // two taps.
+                if (_doubleClicks.Register(now, NativeMethods.GetDoubleClickTime() / 1000.0))
+                    _animator.AddBasin(now);
+                else
+                    _animator.Tap(now);
             }
             else
             {
@@ -648,6 +817,7 @@ namespace HanaDesktopPet.Windows
         private void CancelPointerInteraction()
         {
             if (!_pointerActive) return;
+            _doubleClicks.Reset();
             bool wasDragging = _didDrag;
             _pointerActive = false;
             _pointerMoved = false;
@@ -680,6 +850,7 @@ namespace HanaDesktopPet.Windows
         private void ShowNativeMenu(NativeMethods.Point cursor)
         {
             if (_hwnd == IntPtr.Zero) return;
+            _doubleClicks.Reset();
             _isMenuOpen = true;
             _animationTimer.Stop();
             RefreshVisuals();
@@ -709,6 +880,8 @@ namespace HanaDesktopPet.Windows
             uint noticeFlags = NativeMethods.MfString;
             if (_showNotices) noticeFlags |= NativeMethods.MfChecked;
             NativeMethods.AppendMenu(root, noticeFlags, new IntPtr(MenuToggleNotices), "显示通知气泡");
+            NativeMethods.AppendMenu(root, NativeMethods.MfString, new IntPtr(MenuBasinSize),
+                String.Format("铁盆调试…（{0:0} × {1:0}）", PetBasinStack.Width(_basinConfig), PetBasinStack.Height(_basinConfig)));
             NativeMethods.AppendMenu(dock, NativeMethods.MfString, new IntPtr(MenuDockTopLeft), "左上角");
             NativeMethods.AppendMenu(dock, NativeMethods.MfString, new IntPtr(MenuDockTopRight), "右上角");
             NativeMethods.AppendMenu(dock, NativeMethods.MfString, new IntPtr(MenuDockBottomLeft), "左下角");
@@ -757,11 +930,89 @@ namespace HanaDesktopPet.Windows
                 SavePreferences();
                 if (!_showNotices && _bubble != null) _bubble.HideNotice(_reduceMotion);
             }
+            else if (command == MenuBasinSize) ShowBasinDebugWindow();
             else if (command == MenuDockTopLeft) DockToCorner(false, false);
             else if (command == MenuDockTopRight) DockToCorner(true, false);
             else if (command == MenuDockBottomLeft) DockToCorner(false, true);
             else if (command == MenuDockBottomRight) DockToCorner(true, true);
             else if (command == MenuQuit) Application.Current.Shutdown();
+        }
+
+        /// <summary>
+        /// Resolved basin geometry for the current role: live debug preview, then the saved
+        /// override, then the built-in per-character table.
+        /// </summary>
+        private PetBasinConfig ResolveBasinConfig(PetViewState state)
+        {
+            string roleId = state == null || state.Selection == null ? null : state.Selection.CharacterId;
+            return ResolveBasinConfigForRole(roleId);
+        }
+
+        /// <summary>Same resolution chain, addressed by role id (the debug window's own lookup).</summary>
+        private PetBasinConfig ResolveBasinConfigForRole(string roleId)
+        {
+            if (_basinPreview != null) return _basinPreview;
+            if (roleId != null && _preferenceData != null && _preferenceData.BasinOverrides != null)
+            {
+                PetBasinConfig saved;
+                if (_preferenceData.BasinOverrides.TryGetValue(roleId, out saved)) return saved;
+            }
+            return PetBasinStack.ConfigFor(roleId);
+        }
+
+        /// <summary>
+        /// Opens the per-character basin debug window: width, x offset and y offset with a
+        /// live preview, plus save/reset. A single window is reused.
+        /// </summary>
+        private void ShowBasinDebugWindow()
+        {
+            string roleId = _state == null || _state.Selection == null ? null : _state.Selection.CharacterId;
+            if (_basinDebugWindow != null)
+            {
+                _basinDebugWindow.Reload(roleId, ResolveBasinConfig(_state));
+                _basinDebugWindow.Activate();
+                return;
+            }
+            PetBasinDebugWindow window = new PetBasinDebugWindow(
+                roleId,
+                ResolveBasinConfig(_state),
+                ResolveBasinConfigForRole,
+                delegate(string id, PetBasinConfig config)
+                {
+                    _basinPreview = config == null ? null : config.Clamped();
+                    _basinConfig = ResolveBasinConfig(_state);
+                    RefreshVisuals();
+                },
+                delegate(string id, PetBasinConfig config)
+                {
+                    if (id == null || config == null) return;
+                    if (_preferenceData.BasinOverrides == null)
+                        _preferenceData.BasinOverrides = new Dictionary<string, PetBasinConfig>(StringComparer.Ordinal);
+                    _preferenceData.BasinOverrides[id] = config.Clamped();
+                    _basinPreview = null;
+                    _basinConfig = ResolveBasinConfig(_state);
+                    SavePreferences();
+                    RefreshVisuals();
+                },
+                delegate(string id)
+                {
+                    if (id == null) return;
+                    if (_preferenceData.BasinOverrides != null) _preferenceData.BasinOverrides.Remove(id);
+                    _basinPreview = null;
+                    _basinConfig = ResolveBasinConfig(_state);
+                    SavePreferences();
+                    RefreshVisuals();
+                });
+            window.Owner = this;
+            window.Closed += delegate
+            {
+                _basinPreview = null;
+                _basinConfig = ResolveBasinConfig(_state);
+                _basinDebugWindow = null;
+                RefreshVisuals();
+            };
+            _basinDebugWindow = window;
+            window.Show();
         }
 
         private void SelectRole(string roleId)
@@ -792,7 +1043,13 @@ namespace HanaDesktopPet.Windows
             if (area == null || !NativeMethods.GetWindowRect(_hwnd, out rect)) return;
             int margin = (int)Math.Round(12.0 * NativeMethods.GetDpiForMonitorHandle(area.Handle) / 96.0);
             int x = right ? area.Work.Right - rect.Width - margin : area.Work.Left + margin;
-            int y = bottom ? area.Work.Bottom - rect.Height - margin : area.Work.Top + margin;
+            // The window carries transparent room above the artwork for the basin pile, so
+            // the top corners line up the artwork rather than the taller frame: the pet keeps
+            // the same distance from the screen edge whether or not basins are dropped.
+            // Both margins are DIP, so they scale with the monitor like the window does.
+            double dpiScale = NativeMethods.GetDpiForMonitorHandle(area.Handle) / 96.0;
+            int basinReserve = (int)Math.Round(PetBasinStack.TopReserve(_artworkTopPadding, PetBasinStack.ReserveConfig) * dpiScale);
+            int y = bottom ? area.Work.Bottom - rect.Height - margin : area.Work.Top + margin - basinReserve;
             MoveWindowTo(x, y);
             _positionLocked = true;
             _preferenceData.PositionLocked = true;

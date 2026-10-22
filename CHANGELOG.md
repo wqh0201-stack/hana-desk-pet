@@ -1,8 +1,24 @@
 # 变更记录
 
-各端分开版本：**控制台**（Hana v2 App，`apps/hana-desktop-pet`）、**macOS 桌宠**（Swift + AppKit，`pet-macos`）和 **Windows 桌宠**（WPF，`pet-windows`）。公开基线是控制台 `0.6.6` / 协议 v3 / macOS `0.5.8` / Windows `0.2.0`；本轮配套版本是控制台 `0.6.7` / 协议 v4 / macOS `0.5.9` / Windows `0.3.0`；各端只需下载所用平台的桌宠，市场收录进度以市场条目为准。
+各端分开版本：**控制台**（Hana v2 App，`apps/hana-desktop-pet`）、**macOS 桌宠**（Swift + AppKit，`pet-macos`）和 **Windows 桌宠**（WPF，`pet-windows`）。公开基线是控制台 `0.6.6` / 协议 v3 / macOS `0.5.8` / Windows `0.2.0`；上一轮配套版本是控制台 `0.6.7` / 协议 v4 / macOS `0.5.9` / Windows `0.3.0`；当前本地候选（未发布）是 macOS `0.5.10` / Windows `0.3.1`（协议仍为 v4，控制台下载地址仍指向 `0.5.9` / `0.3.0`，等下次控制台发版跟随）；各端只需下载所用平台的桌宠，市场收录进度以市场条目为准。
 
 逐轮的详细记录（任务边界、验证数据、未验证项）在 [`docs/迭代记录.md`](docs/迭代记录.md)。
+
+## 桌宠 0.5.10 / Windows 0.3.1 — 2026-10-22（本地候选，未发布）
+
+双击扣铁盆功能与本轮按角色调参的正式候选版本：macOS `0.5.10`、Windows `0.3.1`、协议仍是 v4；控制台保持 `0.6.7`（其下载地址仍指向已发布的 macOS `0.5.9` / Windows `0.3.0`，下次控制台发版再跟随；App 包内 `ATTRIBUTION.md` 已是新文本）。
+
+- **双击扣盆**：双击桌宠会在头上扣一只铁盆，可连续叠加（上限 10 只）。每只从上方 20pt 掉落并弹一下；第 11 只进来时最底下一只淡出、其余下沉一格重新压回头顶。切换角色立即清空，退出随进程消失，不落盘。
+- **纯表现层**：盆只跟窗口坐标，不随呼吸/摇晃/拎起帧抖动；不写姿态、活动状态或工作节奏，协议 v4、DTO、manifest 与 catalog 一律未动，控制台未改。
+- **实现**：新增纯模型 `pet-macos/Sources/PetCore/PetBasinStack.swift` 与 `pet-windows/HanaDesktopPet.Core/Animation/PetBasinStack.cs`（几何、掉落/下沉/淡出、上限、双击判定），渲染分别接在 macOS `draw(_:)` 与 Windows `DrawCurrentFrame()` 的现有绘制通道里；不加图层、不加依赖、不新增计时器（唤醒合并进原有单一 deadline）。
+- **素材**：新增 `assets/crosspet/shared/basin.png`（117×47 通用铁盆；非 catalog 立绘、非 CrossPet 上游素材，按 CC BY-NC-SA 4.0 随包使用，署名写进 `ATTRIBUTION.md`）。查找顺序 `{角色ID}/basin.png` → `shared/basin.png` → 代码内矢量盆；缺图或解码失败仍能画出盆，不崩溃。
+- **按角色调参**：右键菜单「铁盆调试…（宽×高）」打开一个浮动面板，当前角色的**宽度 / X 偏移 / Y 偏移**三条滑块（60–120pt、±30pt、10–80pt），拖动即时重绘；「保存」把该角色的配置写进偏好，「重置」清掉覆盖、回到内置表。高度固定按素材 117:47 比例由宽度算出，不做拉伸。
+- **七个角色的定稿参数**（用户逐角色实测后写死进 `characterConfigs`，macOS 与 Windows 同一组数值）：claude `112.66 / -3.44 / 43.39`、gpt `98.12 / -3.06 / 42.95`、deepseek `112.28 / -9.57 / 46.07`、gemini `107.69 / -4.59 / 41.61`、glm `97.36 / -3.44 / 37.59`、deepseek-hoodie `109.98 / -12.63 / 52.77`、gpt-onesie `112.66 / -5.36 / 42.50`（宽度 / X 偏移 / Y 偏移，单位 pt）。
+- **拎起不再变小**：`picked-up` / `picked-up-2` 两帧的可见内容只有 ~163–165pt 高、头顶还低 5.5pt，现在按不透明内容框缩放并上移，拎起来时角色与 idle 同高、头顶仍在同一条线上，盆继续扣在头上。
+- **窗口与气泡**：窗口为盆预留顶部透明空间（245×217 → 245×300，全透明可穿透，角色屏幕位置不变，调尺寸不改变窗口大小）；气泡改为挂在盆堆顶上方，顶部角落停靠按立绘顶边对齐，保证无盆时与改动前视觉一致。
+- **版本与守卫**：macOS `0.5.10` / Windows `0.3.1` / 协议仍 v4。控制台不重打，下载地址仍指 `0.5.9` / `0.3.0`；`tests/desktop-compat.test.mjs` 与 `tests/panel-onboarding.test.mjs` 把「控制台钉住的下载对」与「仓库里的桌宠版本」分开，只要求后者不旧于前者（桌宠可以先打补丁版）。
+- **打包**：`dist/HanaDesktopPet-crosspet-v0.5.10-local.app` + `.zip`（ad-hoc 签名，`unzip -t` 无错误）；Windows `0.3.1` 便携包**本机无法产出**（没有 `csc.exe`），需要在 Windows 上跑 `python3 tools/build-windows-portable.py`。
+- 验证与未验项见 [`docs/迭代记录.md`](docs/迭代记录.md)；Windows C# 本轮**未编译**（本机无 `csc.exe`）。
 
 ## 控制台 0.6.7 / macOS 0.5.9 / Windows 0.3.0 — 2026-10-20
 

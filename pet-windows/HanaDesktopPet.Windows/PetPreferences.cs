@@ -19,11 +19,14 @@ namespace HanaDesktopPet.Windows
         internal PetPreferencesData()
         {
             ShowNotices = true;
+            BasinOverrides = new Dictionary<string, PetBasinConfig>(StringComparer.Ordinal);
         }
 
         public PetSelection Selection { get; set; }
         public bool PositionLocked { get; set; }
         public bool ShowNotices { get; set; }
+        /// <summary>Per-character basin geometry saved from the debug panel.</summary>
+        public Dictionary<string, PetBasinConfig> BasinOverrides { get; set; }
         public PetWindowPosition WindowPosition { get; set; }
     }
 
@@ -70,6 +73,7 @@ namespace HanaDesktopPet.Windows
                 bool showNotices = true;
                 if (root.ContainsKey("ShowNotices") || root.ContainsKey("showNotices"))
                     showNotices = ReadBoolean(root, "ShowNotices", "showNotices");
+                Dictionary<string, PetBasinConfig> basinOverrides = ReadBasinOverrides(root);
                 Dictionary<string, object> rawPosition = GetObject(root, "WindowPosition") ?? GetObject(root, "windowPosition");
                 PetWindowPosition position = null;
                 if (rawPosition != null)
@@ -81,11 +85,46 @@ namespace HanaDesktopPet.Windows
                         YRatio = ReadDouble(rawPosition, "YRatio", "yRatio")
                     };
                 }
-                return new PetPreferencesData { Selection = selection, PositionLocked = locked, ShowNotices = showNotices, WindowPosition = CleanPosition(position) };
+                return new PetPreferencesData { Selection = selection, PositionLocked = locked, ShowNotices = showNotices,
+                    BasinOverrides = basinOverrides, WindowPosition = CleanPosition(position) };
             }
             catch
             {
                 return fallback;
+            }
+        }
+
+        private static Dictionary<string, PetBasinConfig> ReadBasinOverrides(Dictionary<string, object> root)
+        {
+            Dictionary<string, PetBasinConfig> result = new Dictionary<string, PetBasinConfig>(StringComparer.Ordinal);
+            Dictionary<string, object> raw = GetObject(root, "BasinOverrides") ?? GetObject(root, "basinOverrides");
+            if (raw == null) return result;
+            foreach (KeyValuePair<string, object> pair in raw)
+            {
+                System.Collections.IList values = pair.Value as System.Collections.IList;
+                if (values == null || values.Count != 3) continue;
+                double width;
+                double xOffset;
+                double yOffset;
+                if (!TryNumber(values[0], out width) || !TryNumber(values[1], out xOffset) || !TryNumber(values[2], out yOffset))
+                    continue;
+                result[pair.Key] = new PetBasinConfig(width, xOffset, yOffset).Clamped();
+            }
+            return result;
+        }
+
+        private static bool TryNumber(object value, out double number)
+        {
+            number = 0.0;
+            if (value == null) return false;
+            try
+            {
+                number = Convert.ToDouble(value);
+                return true;
+            }
+            catch
+            {
+                return false;
             }
         }
 
@@ -100,6 +139,9 @@ namespace HanaDesktopPet.Windows
                     : new PetSelection();
                 safe.PositionLocked = data.PositionLocked;
                 safe.ShowNotices = data.ShowNotices;
+                safe.BasinOverrides = data.BasinOverrides != null
+                    ? new Dictionary<string, PetBasinConfig>(data.BasinOverrides, StringComparer.Ordinal)
+                    : new Dictionary<string, PetBasinConfig>(StringComparer.Ordinal);
                 safe.WindowPosition = CleanPosition(data.WindowPosition);
 
                 Dictionary<string, object> selection = new Dictionary<string, object>();
@@ -110,6 +152,16 @@ namespace HanaDesktopPet.Windows
                 document.Add("Selection", selection);
                 document.Add("PositionLocked", safe.PositionLocked);
                 document.Add("ShowNotices", safe.ShowNotices);
+                if (safe.BasinOverrides.Count > 0)
+                {
+                    Dictionary<string, object> basin = new Dictionary<string, object>();
+                    foreach (KeyValuePair<string, PetBasinConfig> pair in safe.BasinOverrides)
+                    {
+                        if (pair.Value == null) continue;
+                        basin[pair.Key] = new object[] { pair.Value.Width, pair.Value.XOffset, pair.Value.YOffset };
+                    }
+                    document.Add("BasinOverrides", basin);
+                }
                 if (safe.WindowPosition != null)
                 {
                     Dictionary<string, object> position = new Dictionary<string, object>();

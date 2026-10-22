@@ -16,7 +16,7 @@ const PANEL_SOURCE = fs.readFileSync("apps/hana-desktop-pet/ui/assets/panel.js",
 const PANEL_HTML = fs.readFileSync("apps/hana-desktop-pet/ui/panel.html", "utf8");
 const PANEL_CSS = fs.readFileSync("apps/hana-desktop-pet/ui/assets/panel.css", "utf8");
 
-// 这两个版本号来自各端的单一来源，不在测试里手抄一份：
+// 仓库里最新的桌宠版本，来自各端的单一来源：
 // Windows 在 pet-windows/version.json，macOS 在 Resources/Info.plist（CFBundleShortVersionString）。
 const WINDOWS_VERSION = JSON.parse(
   fs.readFileSync("pet-windows/version.json", "utf8")).version;
@@ -25,10 +25,28 @@ const MAC_VERSION = fs.readFileSync("pet-macos/Resources/Info.plist", "utf8")
 assert.ok(WINDOWS_VERSION, "pet-windows/version.json exposes a version");
 assert.ok(MAC_VERSION, "Info.plist exposes CFBundleShortVersionString");
 
+// 控制台实际下载的那一对（0.6.7 的配对）。控制台包没有跟着桌宠补丁版一起重打，
+// 所以这里钉的是「控制台指向的版本」，而不是仓库里最新的桌宠版本；下面的断言会保证
+// 仓库里的桌宠只会比它新、不会比它旧。
+const PINNED_WINDOWS_VERSION = "0.3.0";
+const PINNED_MAC_VERSION = "0.5.9";
+
 const WINDOWS_URL =
-  `https://github.com/wqh0201-stack/hana-desk-pet/releases/download/windows-${WINDOWS_VERSION}/HanaDesktopPet-windows-${WINDOWS_VERSION}-portable.zip`;
+  `https://github.com/wqh0201-stack/hana-desk-pet/releases/download/windows-${PINNED_WINDOWS_VERSION}/HanaDesktopPet-windows-${PINNED_WINDOWS_VERSION}-portable.zip`;
 const MAC_URL =
-  `https://github.com/wqh0201-stack/hana-desk-pet/releases/download/pet-${MAC_VERSION}/HanaDesktopPet-crosspet-v${MAC_VERSION}-local.zip`;
+  `https://github.com/wqh0201-stack/hana-desk-pet/releases/download/pet-${PINNED_MAC_VERSION}/HanaDesktopPet-crosspet-v${PINNED_MAC_VERSION}-local.zip`;
+
+/** Numeric per-part comparison so a patch bump never counts as "older". */
+function compareVersions(left, right) {
+  const a = String(left).split(".").map((part) => Number.parseInt(part, 10) || 0);
+  const b = String(right).split(".").map((part) => Number.parseInt(part, 10) || 0);
+  for (let index = 0; index < Math.max(a.length, b.length); index += 1) {
+    const x = a[index] ?? 0;
+    const y = b[index] ?? 0;
+    if (x !== y) return x > y ? 1 : -1;
+  }
+  return 0;
+}
 // 这两条是协议 v3 时代的旧入口；v4 候选不得再出现。
 const RETIRED_URLS = [
   "https://github.com/wqh0201-stack/hana-desk-pet/releases/download/windows-0.2.0/HanaDesktopPet-windows-0.2.0-portable.zip",
@@ -375,6 +393,15 @@ test("both download entries agree in panel.js and panel.html and track the shipp
   assert.ok(!PANEL_HTML.includes("windows-0.2.0"), "the install copy must not name the retired release");
 });
 
+test("the repo's desktop builds are never older than the versions the console downloads", () => {
+  // 桌宠可以先打补丁版（0.3.1 / 0.5.10），控制台等下次发版再指过去；但不能反过来：
+  // 控制台已经指向的版本，仓库里必须真的存在。
+  assert.ok(compareVersions(WINDOWS_VERSION, PINNED_WINDOWS_VERSION) >= 0,
+    `Windows sources ${WINDOWS_VERSION} are older than the pinned ${PINNED_WINDOWS_VERSION}`);
+  assert.ok(compareVersions(MAC_VERSION, PINNED_MAC_VERSION) >= 0,
+    `macOS sources ${MAC_VERSION} are older than the pinned ${PINNED_MAC_VERSION}`);
+});
+
 test("the static markup keeps link semantics, both platforms, and the short install steps", () => {
   const anchors = [...PANEL_HTML.matchAll(/<a\b[^>]*id="(download-[a-z]+)"[^>]*>/g)];
   assert.equal(anchors.length, 2, "exactly two platform entries");
@@ -395,14 +422,14 @@ test("the static markup keeps link semantics, both platforms, and the short inst
   assert.match(PANEL_HTML, /不必关闭安全防护/);
   assert.match(PANEL_HTML, /安装说明/, "the detailed help entry exists");
   // The Windows release is described as a release link, never as a live download.
-  assert.ok(PANEL_HTML.includes(`windows-${WINDOWS_VERSION}`), "the install note names the current Windows release");
+  assert.ok(PANEL_HTML.includes(`windows-${PINNED_WINDOWS_VERSION}`), "the install note names the release the console downloads");
   // 不得把「打不开」归因成「还没上线」：网络/权限/浏览器失败都不等于未发布。
   assert.doesNotMatch(PANEL_HTML, /还没上线/);
   assert.doesNotMatch(PANEL_HTML, /打不开就是/);
   assert.doesNotMatch(PANEL_HTML, /未发布|尚未发布|等待发布/);
   // 只保留可校验的来源提示与系统安全提示。
-  assert.ok(PANEL_HTML.includes(`核对下载来源是 Release「windows-${WINDOWS_VERSION}」`),
-    "the security note names the current Windows release");
+  assert.ok(PANEL_HTML.includes(`核对下载来源是 Release「windows-${PINNED_WINDOWS_VERSION}」`),
+    "the security note names the release the console downloads");
   assert.doesNotMatch(PANEL_HTML, /插件市场|已上架|market/);
 });
 
