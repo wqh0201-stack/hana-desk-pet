@@ -1,8 +1,17 @@
 # 变更记录
 
-各端分开版本：**控制台**（Hana v2 App，`apps/hana-desktop-pet`）、**macOS 桌宠**（Swift + AppKit，`pet-macos`）和 **Windows 桌宠**（WPF，`pet-windows`）。公开基线是控制台 `0.6.6` / 协议 v3 / macOS `0.5.8` / Windows `0.2.0`；上一轮配套版本是控制台 `0.6.7` / 协议 v4 / macOS `0.5.9` / Windows `0.3.0`；当前本地候选（未发布）是 macOS `0.5.10` / Windows `0.3.1`（协议仍为 v4，控制台下载地址仍指向 `0.5.9` / `0.3.0`，等下次控制台发版跟随）；各端只需下载所用平台的桌宠，市场收录进度以市场条目为准。
+各端分开版本：**控制台**（Hana v2 App，`apps/hana-desktop-pet`）、**macOS 桌宠**（Swift + AppKit，`pet-macos`）和 **Windows 桌宠**（WPF，`pet-windows`）。公开基线是控制台 `0.6.6` / 协议 v3 / macOS `0.5.8` / Windows `0.2.0`；上一轮配套版本是控制台 `0.6.7` / 协议 v4 / macOS `0.5.9` / Windows `0.3.0`；本轮已发布控制台 `0.6.8` / macOS `0.5.10` / Windows `0.3.1`（协议仍为 v4），控制台下载入口已跟到这两版桌宠；各端只需下载所用平台的桌宠，市场收录进度以市场条目为准。
 
 逐轮的详细记录（任务边界、验证数据、未验证项）在 [`docs/迭代记录.md`](docs/迭代记录.md)。
+
+## 控制台 0.6.8 — 2026-10-22
+
+- **下载入口跟到带铁盆功能的桌宠**：`PET_DOWNLOADS` 与 `panel.html` 的两个备用链接改为 Windows `windows-0.3.1` / macOS `pet-0.5.10`，安装说明的来源提示同步改为 `windows-0.3.1`。仍是固定白名单、仍只经 `hana.external.open`，没有新增网络抓取、自动下载或安装能力。
+- **版本文档**：README 的本轮版本行、安装步骤与 Windows 源码状态跟到 `0.6.8 / 0.5.10 / 0.3.1`。
+- **配对守卫**：`tests/desktop-compat.test.mjs` 新增 `0.6.8 → Windows 0.3.1 / macOS 0.5.10`（协议 4），保留 `0.6.7` 与 `0.6.6` 两组；`tests/panel-onboarding.test.mjs` 里控制台钉住的版本同步为 `0.3.1` / `0.5.10`。
+- 协议 v4、DTO、manifest 能力、localhost 声明与素材目录一律未动；App 包内 `ATTRIBUTION.md` 已是含铁盆署名的版本，重打包逐字节带出。
+- 验证：`sh tools/run-checks.sh` exit 0（Node 186/186，面板布局在 560×664 无溢出）；官方 validator `--dir` 与 `--archive dist/app-hana-desktop-pet-0.6.8.zip` 均 0 error / 1 已知 warning（`DYNAMIC_DEPENDENCIES_NOT_PROVEN`）；包内 606 个文件与源码逐字节一致。
+- 发布：`console-0.6.8`（Latest），附件 `app-hana-desktop-pet-0.6.8.zip` + `.entry.json`；`dist/app-hana-desktop-pet-0.6.7.zip` 保留不删（PR #124 原审版本）。市场 PR #124 在**同一分支**追加 commit 更新 `approvals.json`。
 
 ## 桌宠 0.5.10 / Windows 0.3.1 — 2026-10-22（已发布）
 

@@ -78,10 +78,10 @@ const CONNECTION_STATUSES = new Set(["disabled", "connecting", "connected", "off
  */
 const PET_DOWNLOADS = Object.freeze({
   windows: Object.freeze({
-    url: "https://github.com/wqh0201-stack/hana-desk-pet/releases/download/windows-0.3.0/HanaDesktopPet-windows-0.3.0-portable.zip",
+    url: "https://github.com/wqh0201-stack/hana-desk-pet/releases/download/windows-0.3.1/HanaDesktopPet-windows-0.3.1-portable.zip",
   }),
   mac: Object.freeze({
-    url: "https://github.com/wqh0201-stack/hana-desk-pet/releases/download/pet-0.5.9/HanaDesktopPet-crosspet-v0.5.9-local.zip",
+    url: "https://github.com/wqh0201-stack/hana-desk-pet/releases/download/pet-0.5.10/HanaDesktopPet-crosspet-v0.5.10-local.zip",
   }),
 });
 /**

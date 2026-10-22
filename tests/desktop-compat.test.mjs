@@ -2,7 +2,7 @@
  * 控制台与桌宠的兼容关系守卫。
  *
  * 公开基线是控制台 0.6.6（协议 v3），它只能配 Windows 0.2.0 / macOS 0.5.8；
- * 本地 0.6.7 候选是协议 v4，控制台下载地址配 Windows 0.3.0 / macOS 0.5.9。两套下载地址都是
+ * 本地 0.6.8 候选是协议 v4，控制台下载地址配 Windows 0.3.1 / macOS 0.5.10。两套下载地址都是
  * 固定白名单，不随“最新版”漂移。
  *
  * 兼容判定按协议版本与所需字段/能力，而不是“版本号相等”：将来控制台小版本
@@ -31,7 +31,8 @@ const macUrl = (version) =>
 
 /**
  * 已经确定的兼容组合。下载地址按各版本实际发布位置固定：
- * 0.6.6 的 macOS 附件留在既有的 console-0.6.5 Release，0.6.7 的 0.5.9 走新 tag。
+ * 0.6.6 的 macOS 附件留在既有的 console-0.6.5 Release，0.6.7 的 0.5.9 留在 pet-0.5.9，
+ * 0.6.8 起跟到带铁盆的 pet-0.5.10 / windows-0.3.1。
  * protocol 是控制台与桌宠共用的本机协议版本。
  */
 const COMPATIBILITY = {
@@ -49,7 +50,15 @@ const COMPATIBILITY = {
     macVersion: "0.5.9",
     windows: windowsUrl("0.3.0"),
     mac: macUrl("0.5.9"),
-    note: "本轮本地候选，未发布",
+    note: "已发布（状态字幕气泡）",
+  },
+  "0.6.8": {
+    protocol: 4,
+    windowsVersion: "0.3.1",
+    macVersion: "0.5.10",
+    windows: windowsUrl("0.3.1"),
+    mac: macUrl("0.5.10"),
+    note: "本轮候选：下载入口跟到双击扣铁盆",
   },
 };
 

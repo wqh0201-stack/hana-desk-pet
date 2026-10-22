@@ -6,9 +6,9 @@ Hana 在想事情，它歪头思考；Hana 在读文件，它翻书；Hana 在�
 
 > **这是 demo。** 给群友玩玩看的，不是产品。macOS 版已可用，Windows 版有单文件便携版可下载。请按玩具的预期使用。
 >
-> **本轮版本（2026-10-20）：** 控制台 `0.6.7`、macOS 桌宠 `0.5.9`、Windows 桌宠 `0.3.0`，本机协议 **v4**。控制台与所用平台的桌宠配套升级，只下载自己平台的桌宠即可。旧的 `0.6.6` / v3 与 Windows `0.2.0` / macOS `0.5.8` 配对继续保留，不覆盖旧链接。
+> **本轮版本（2026-10-22）：** 控制台 `0.6.8`、macOS 桌宠 `0.5.10`、Windows 桌宠 `0.3.1`，本机协议 **v4**。这一版桌宠双击可以在头上扣铁盆（可叠加、按角色定制尺寸与位置），控制台的下载入口已跟到这两个版本。旧的 `0.6.6` / v3 与 Windows `0.2.0` / macOS `0.5.8` 配对继续保留，不覆盖旧链接。
 >
-> 市场更新需审核。市场若仍显示 `0.6.6`，请继续用它配套的旧桌宠；要使用气泡版，可从 [控制台 0.6.7 Release](../../releases/tag/console-0.6.7) 手动安装，并配下面的新桌宠。
+> 市场更新需审核。市场若仍显示旧版本，请继续用它配套的桌宠；要使用气泡版与铁盆功能，可从 [控制台 0.6.8 Release](../../releases/tag/console-0.6.8) 手动安装，并配下面的新桌宠。
 
 ## 它是什么
 
@@ -37,12 +37,12 @@ Hana
 
 **Windows 版：** 另有独立 WPF 桌宠，沿用同一个控制台和 v4 协议。发布物是**预编译的单个 exe**，211 张图片已内嵌，解压双击即可，不需要 SDK、Python、Node 或任何解码器。目标为 Windows 10 1903+ / Windows 11 x64，需要系统自带的 .NET Framework 4.8。
 
-> **源码状态：** Windows `0.3.0` 的源码在 `pet-windows/`（含 `PetAssetStore.cs`、单文件构建脚本与 C# 合成检查），素材 blob 可由 canonical catalog 重建。已发布的 `0.2.0` 是协议 v3 基线，仍保留原附件。`0.3.0` 的成品 exe 在 Windows 编译并做过单屏 100% DPI 实机测试（作者实测）；本仓库不重复声称已在 Mac 上编译过。
+> **源码状态：** Windows `0.3.1` 的源码在 `pet-windows/`（含 `PetAssetStore.cs`、单文件构建脚本与 C# 合成检查），素材 blob 可由 canonical catalog 重建。已发布的 `0.2.0` 是协议 v3 基线，仍保留原附件。`0.3.1` 的成品 exe 在 Windows 编译并实机验证过双击扣盆、调试面板、顶部停靠与切换角色（作者实测）；本仓库不重复声称已在 Mac 上编译过。
 
 ## 装
 
 1. 从 [Releases](../../releases) 下载 `app-hana-desktop-pet-*.zip`，在 Hana 里本地安装，**批准 `app/sessions.read` 权限**（不批的话会话列表里全是「会话」）。控制台还会申请 `app/ui.open-external`，只用于你点击下载入口时打开固定的 Release 页面；不批准也能用，只是要自己复制链接。
-2. 按平台下载**其中一个**桌宠：Windows 下载 [0.3.0 便携包](../../releases/download/windows-0.3.0/HanaDesktopPet-windows-0.3.0-portable.zip)，解压双击 exe；macOS Apple Silicon 下载 [0.5.9 包](../../releases/download/pet-0.5.9/HanaDesktopPet-crosspet-v0.5.9-local.zip)，解压双击 `.app`。未签名程序首次打开可能被系统拦截；macOS 可右键 → 打开，或在「系统设置 → 隐私与安全性」中确认。Windows 用户不需要下载 Mac 包。
+2. 按平台下载**其中一个**桌宠：Windows 下载 [0.3.1 便携包](../../releases/download/windows-0.3.1/HanaDesktopPet-windows-0.3.1-portable.zip)，解压双击 exe；macOS Apple Silicon 下载 [0.5.10 包](../../releases/download/pet-0.5.10/HanaDesktopPet-crosspet-v0.5.10-local.zip)，解压双击 `.app`。未签名程序首次打开可能被系统拦截；macOS 可右键 → 打开，或在「系统设置 → 隐私与安全性」中确认。Windows 用户不需要下载 Mac 包。
 3. 控制台里打开「本机桌宠连接」，状态变「已连接」就好了。
 
 ## 玩

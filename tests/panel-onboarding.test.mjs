@@ -25,11 +25,11 @@ const MAC_VERSION = fs.readFileSync("pet-macos/Resources/Info.plist", "utf8")
 assert.ok(WINDOWS_VERSION, "pet-windows/version.json exposes a version");
 assert.ok(MAC_VERSION, "Info.plist exposes CFBundleShortVersionString");
 
-// 控制台实际下载的那一对（0.6.7 的配对）。控制台包没有跟着桌宠补丁版一起重打，
-// 所以这里钉的是「控制台指向的版本」，而不是仓库里最新的桌宠版本；下面的断言会保证
+// 控制台实际下载的那一对（0.6.8 的配对）。
+// 这里钉的是「控制台指向的版本」，而不是仓库里最新的桌宠版本；下面的断言会保证
 // 仓库里的桌宠只会比它新、不会比它旧。
-const PINNED_WINDOWS_VERSION = "0.3.0";
-const PINNED_MAC_VERSION = "0.5.9";
+const PINNED_WINDOWS_VERSION = "0.3.1";
+const PINNED_MAC_VERSION = "0.5.10";
 
 const WINDOWS_URL =
   `https://github.com/wqh0201-stack/hana-desk-pet/releases/download/windows-${PINNED_WINDOWS_VERSION}/HanaDesktopPet-windows-${PINNED_WINDOWS_VERSION}-portable.zip`;
